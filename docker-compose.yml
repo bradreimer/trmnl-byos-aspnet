@@ -1,0 +1,13 @@
+version: "3.9"
+
+services:
+  trmnl_byos:
+    container_name: trmnl_byos
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "2300:3000"
+    volumes:
+      - ./data:/data
+    restart: always
