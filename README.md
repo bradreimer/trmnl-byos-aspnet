@@ -50,7 +50,7 @@ Images are stored in:
 ## Project Structure
 
 ```plain
-TrmnlByod/
+TrmnlByos/
   Program.cs
   Models/
     SetupModels.cs

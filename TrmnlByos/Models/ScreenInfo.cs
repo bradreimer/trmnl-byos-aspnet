@@ -1,4 +1,4 @@
-namespace Schrody.TrmnlByos.Models;
+namespace TrmnlByos.Models;
 
 public sealed record ScreenInfo(
     string Id,

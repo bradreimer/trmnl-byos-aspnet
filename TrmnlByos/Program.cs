@@ -1,6 +1,6 @@
 using System.Net.Mime;
 using Microsoft.AspNetCore.Http.HttpResults;
-using Schrody.TrmnlByos.Models;
+using TrmnlByos.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
