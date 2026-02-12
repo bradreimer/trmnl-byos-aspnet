@@ -70,8 +70,8 @@ app.MapGet("/api/setup", (HttpRequest request, ILogger<Program> logger) =>
 });
 
 // ---- Firmware: Log ----
-// POST /api/logs
-app.MapPost("/api/logs", async (LogRequest logRequest, ILogger<Program> logger) =>
+// POST /api/log
+app.MapPost("/api/log", async (LogRequest logRequest, ILogger<Program> logger) =>
 {
     foreach (var entry in logRequest.logs)
     {
