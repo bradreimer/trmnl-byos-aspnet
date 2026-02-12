@@ -17,11 +17,15 @@ app.Use(async (context, next) =>
 {
     var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
     var request = context.Request;
-    logger.LogInformation("{Method} {Path}", request.Method, request.Path);
+    var deviceId = request.Headers["ID"].FirstOrDefault() ?? "unknown";
+    
+    logger.LogInformation("[{Timestamp:yyyy-MM-dd HH:mm:ss}] {Method} {Path} (Device: {DeviceId})", 
+        DateTime.UtcNow, request.Method, request.Path, deviceId);
     
     await next(context);
     
-    logger.LogInformation("{Method} {Path} -> {StatusCode}", request.Method, request.Path, context.Response.StatusCode);
+    logger.LogInformation("[{Timestamp:yyyy-MM-dd HH:mm:ss}] {Method} {Path} -> {StatusCode} (Device: {DeviceId})", 
+        DateTime.UtcNow, request.Method, request.Path, context.Response.StatusCode, deviceId);
 });
 
 app.UseSwagger();
@@ -36,7 +40,7 @@ var screens = new Dictionary<string, ScreenInfo>(StringComparer.OrdinalIgnoreCas
 // ---- Firmware: Setup ----
 // GET /api/setup
 // Headers: ID (device id), optional: MODEL, FIRMWARE, REFRESH_RATE
-app.MapGet("/api/setup", (HttpRequest request) =>
+app.MapGet("/api/setup", (HttpRequest request, ILogger<Program> logger) =>
 {
     var deviceId = request.Headers["ID"].FirstOrDefault() ?? "unknown";
     var screenId = deviceId.ToLowerInvariant();
@@ -53,6 +57,8 @@ app.MapGet("/api/setup", (HttpRequest request) =>
         screens[screenId] = screen;
     }
 
+    logger.LogInformation("Device setup: {DeviceId}", deviceId);
+
     var response = new SetupResponse(
         api_key: deviceId,
         friendly_id: screenId.ToUpper(),
@@ -65,19 +71,19 @@ app.MapGet("/api/setup", (HttpRequest request) =>
 
 // ---- Firmware: Log ----
 // POST /api/logs
-app.MapPost("/api/logs", async (LogRequest logRequest) =>
+app.MapPost("/api/logs", async (LogRequest logRequest, ILogger<Program> logger) =>
 {
     foreach (var entry in logRequest.logs)
     {
-        Console.WriteLine($"[TRMNL LOG] {entry.message}");
-        Console.WriteLine($"  Firmware: {entry.firmware_version}, Battery: {entry.battery_voltage}V, WiFi: {entry.wifi_signal}");
+        logger.LogInformation("Device telemetry: FW {FirmwareVersion} | Battery {BatteryVoltage}V | WiFi {WiFiSignal}dBm | Heap {FreeHeap}B | {Message}",
+            entry.firmware_version, entry.battery_voltage, entry.wifi_signal, entry.free_heap_size, entry.message);
     }
     return Results.NoContent();
 });
 
 // ---- Firmware: Display ----
 // GET /api/display
-app.MapGet("/api/display", (HttpRequest request) =>
+app.MapGet("/api/display", (HttpRequest request, ILogger<Program> logger) =>
 {
     var deviceId = request.Headers["ID"].FirstOrDefault() ?? "unknown";
     var screenId = deviceId.ToLowerInvariant();
@@ -99,6 +105,9 @@ app.MapGet("/api/display", (HttpRequest request) =>
     var imagePath = screen.ImagePath ?? $"/screens/{screenId}.jpg";
     var filename = Path.GetFileName(imagePath);
 
+    logger.LogInformation("Display poll: {DeviceId} | Image: {Filename} | Refresh: {RefreshRate}ms",
+        deviceId, filename, refreshRate);
+
     var response = new DisplayResponse(
         filename: filename,
         firmware_url: "http://localhost:2300/firmware/latest.bin",
@@ -116,7 +125,7 @@ app.MapGet("/api/display", (HttpRequest request) =>
 
 // ---- BYOD: upload image ----
 // POST /api/screens/{id}/image
-app.MapPost("/api/screens/{id}/image", async Task<Results<Ok<object>, BadRequest<string>>> (string id, HttpRequest request) =>
+app.MapPost("/api/screens/{id}/image", async Task<Results<Ok<object>, BadRequest<string>>> (string id, HttpRequest request, ILogger<Program> logger) =>
 {
     var contentType = request.ContentType ?? MediaTypeNames.Image.Jpeg;
     if (!contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
@@ -143,27 +152,32 @@ app.MapPost("/api/screens/{id}/image", async Task<Results<Ok<object>, BadRequest
 
     screens[id] = screen;
 
+    logger.LogInformation("Image uploaded: {ScreenId} | Type: {ContentType}", id, contentType);
+
     var result = new { id, path = screen.ImagePath! };
     return TypedResults.Ok((object)result);
 });
 
 // ---- BYOD: serve image ----
 // GET /screens/{id}.jpg
-app.MapGet("/screens/{id}.jpg", (string id) =>
+app.MapGet("/screens/{id}.jpg", (string id, ILogger<Program> logger) =>
 {
     var jpgPath = Path.Combine(dataRoot, $"{id}.jpg");
     var pngPath = Path.Combine(dataRoot, $"{id}.png");
 
     if (File.Exists(jpgPath))
     {
+        logger.LogInformation("Serving image: {ScreenId} (JPEG)", id);
         return Results.File(jpgPath, "image/jpeg");
     }
 
     if (File.Exists(pngPath))
     {
+        logger.LogInformation("Serving image: {ScreenId} (PNG)", id);
         return Results.File(pngPath, "image/png");
     }
 
+    logger.LogInformation("Image not found: {ScreenId}", id);
     return Results.NotFound();
 });
 
