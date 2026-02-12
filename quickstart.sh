@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Docker Compose Helper Script for TRMNL BYOS ASP.NET
-# Usage: ./compose.sh [up|down|restart|logs|status]
+# Usage: ./compose.sh [start|stop|restart|logs|status]
 
 set -e
 
@@ -15,11 +15,11 @@ NC='\033[0m' # No Color
 
 # Display usage information
 usage() {
-    echo "Usage: $0 {up|down|restart|logs|status}"
+    echo "Usage: $0 {start|stop|restart|logs|status}"
     echo ""
     echo "Commands:"
-    echo "  up       - Start the containers"
-    echo "  down     - Stop the containers"
+    echo "  start    - Start the containers (always rebuilds)"
+    echo "  stop     - Stop the containers"
     echo "  restart  - Restart the containers"
     echo "  logs     - View container logs"
     echo "  status   - Show container status"
@@ -27,16 +27,16 @@ usage() {
 }
 
 # Start containers
-docker_up() {
+docker_start() {
     echo -e "${YELLOW}Starting TRMNL BYOS containers...${NC}"
     cd "$SCRIPT_DIR"
-    docker compose up -d
+    docker compose up -d --build
     echo -e "${GREEN}✓ Containers started${NC}"
     echo "Service available at http://localhost:2300"
 }
 
 # Stop containers
-docker_down() {
+docker_stop() {
     echo -e "${YELLOW}Stopping TRMNL BYOS containers...${NC}"
     cd "$SCRIPT_DIR"
     docker compose down
@@ -69,11 +69,11 @@ if [[ $# -eq 0 ]]; then
 fi
 
 case "$1" in
-    up)
-        docker_up
+    start)
+        docker_start
         ;;
-    down)
-        docker_down
+    stop)
+        docker_stop
         ;;
     restart)
         docker_restart
