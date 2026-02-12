@@ -167,18 +167,27 @@ app.MapPost("/api/screens/{id}/image", async Task<Results<Ok<object>, BadRequest
     return TypedResults.Ok((object)result);
 });
 
-// ---- BYOD: serve image ----
+// ---- BYOD: serve JPEG image ----
 // GET /screens/{id}.jpg
 app.MapGet("/screens/{id}.jpg", (string id, ILogger<Program> logger) =>
 {
     var jpgPath = Path.Combine(dataRoot, $"{id}.jpg");
-    var pngPath = Path.Combine(dataRoot, $"{id}.png");
 
     if (File.Exists(jpgPath))
     {
         logger.LogInformation("Serving image: {ScreenId} (JPEG)", id);
         return Results.File(jpgPath, "image/jpeg");
     }
+
+    logger.LogInformation("Image not found: {ScreenId}", id);
+    return Results.NotFound();
+});
+
+// ---- BYOD: serve PNG image ----
+// GET /screens/{id}.png
+app.MapGet("/screens/{id}.png", (string id, ILogger<Program> logger) =>
+{
+    var pngPath = Path.Combine(dataRoot, $"{id}.png");
 
     if (File.Exists(pngPath))
     {
