@@ -39,11 +39,6 @@ var screens = new Dictionary<string, ScreenInfo>(StringComparer.OrdinalIgnoreCas
 app.MapGet("/api/setup", (HttpRequest request) =>
 {
     var deviceId = request.Headers["ID"].FirstOrDefault() ?? "unknown";
-    var model = request.Headers["MODEL"].FirstOrDefault() ?? "byod";
-    var firmware = request.Headers["FIRMWARE"].FirstOrDefault();
-    var refreshHeader = request.Headers["REFRESH_RATE"].FirstOrDefault();
-    var refreshRate = int.TryParse(refreshHeader, out var r) ? r : 100;
-
     var screenId = deviceId.ToLowerInvariant();
 
     if (!screens.TryGetValue(screenId, out var screen))
@@ -51,7 +46,7 @@ app.MapGet("/api/setup", (HttpRequest request) =>
         screen = new ScreenInfo(
             screenId,
             $"Screen {screenId}",
-            $"Model {model}, Firmware {firmware ?? "unknown"}",
+            null,
             DateTimeOffset.UtcNow,
             null
         );
@@ -59,11 +54,10 @@ app.MapGet("/api/setup", (HttpRequest request) =>
     }
 
     var response = new SetupResponse(
-        DeviceId: deviceId,
-        ScreenId: screenId,
-        Model: model,
-        RefreshRate: refreshRate,
-        Success: "Device setup successful."
+        api_key: deviceId,
+        friendly_id: screenId.ToUpper(),
+        image_url: $"/screens/{screenId}.jpg",
+        message: "Welcome to TRMNL BYOS"
     );
 
     return Results.Ok(response);
@@ -71,15 +65,12 @@ app.MapGet("/api/setup", (HttpRequest request) =>
 
 // ---- Firmware: Log ----
 // POST /api/logs
-app.MapPost("/api/logs", async (LogEntry entry) =>
+app.MapPost("/api/logs", async (LogRequest logRequest) =>
 {
-    Console.WriteLine($"[TRMNL LOG] {entry.Timestamp:u} [{entry.Level}] {entry.Message}");
-    if (entry.Context is not null)
+    foreach (var entry in logRequest.logs)
     {
-        foreach (var kv in entry.Context)
-        {
-            Console.WriteLine($"  {kv.Key}: {kv.Value}");
-        }
+        Console.WriteLine($"[TRMNL LOG] {entry.message}");
+        Console.WriteLine($"  Firmware: {entry.firmware_version}, Battery: {entry.battery_voltage}V, WiFi: {entry.wifi_signal}");
     }
     return Results.NoContent();
 });
@@ -90,6 +81,8 @@ app.MapGet("/api/display", (HttpRequest request) =>
 {
     var deviceId = request.Headers["ID"].FirstOrDefault() ?? "unknown";
     var screenId = deviceId.ToLowerInvariant();
+    var refreshHeader = request.Headers["REFRESH_RATE"].FirstOrDefault();
+    var refreshRate = int.TryParse(refreshHeader, out var r) ? r : 100;
 
     if (!screens.TryGetValue(screenId, out var screen))
     {
@@ -104,18 +97,18 @@ app.MapGet("/api/display", (HttpRequest request) =>
     }
 
     var imagePath = screen.ImagePath ?? $"/screens/{screenId}.jpg";
-    var updatedAt = screen.LastUpdated == DateTimeOffset.MinValue
-        ? DateTimeOffset.UtcNow
-        : screen.LastUpdated;
-
-    var refreshHeader = request.Headers["REFRESH_RATE"].FirstOrDefault();
-    var refreshRate = int.TryParse(refreshHeader, out var r) ? r : 100;
+    var filename = Path.GetFileName(imagePath);
 
     var response = new DisplayResponse(
-        ScreenId: screenId,
-        ImageUrl: imagePath,
-        UpdatedAt: updatedAt,
-        RefreshRate: refreshRate
+        filename: filename,
+        firmware_url: "http://localhost:2300/firmware/latest.bin",
+        firmware_version: "1.0.0",
+        image_url: imagePath,
+        image_url_timeout: 0,
+        refresh_rate: refreshRate,
+        reset_firmware: false,
+        special_function: "none",
+        update_firmware: false
     );
 
     return Results.Ok(response);

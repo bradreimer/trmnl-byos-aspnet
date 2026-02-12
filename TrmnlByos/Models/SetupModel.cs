@@ -1,16 +1,8 @@
 namespace TrmnlByos.Models;
 
-public sealed record SetupRequest(
-    string DeviceId,
-    string? Model,
-    string? FirmwareVersion,
-    int? RefreshRate
-);
-
 public sealed record SetupResponse(
-    string DeviceId,
-    string ScreenId,
-    string Model,
-    int RefreshRate,
-    string Success
+    string api_key,
+    string friendly_id,
+    string image_url,
+    string message
 );
