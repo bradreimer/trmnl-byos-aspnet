@@ -104,15 +104,24 @@ app.MapGet("/api/display", (HttpRequest request, ILogger<Program> logger) =>
 
     var imagePath = screen.ImagePath ?? $"/screens/{screenId}.jpg";
     var filename = Path.GetFileName(imagePath);
+    
+    // Get the host from the request
+    var host = request.Host.Host;
+    var port = request.Host.Port ?? (request.IsHttps ? 443 : 80);
+    var scheme = request.Scheme;
+    var baseUrl = $"{scheme}://{host}:{port}";
+    
+    var absoluteImageUrl = $"{baseUrl}{imagePath}";
+    var absoluteFirmwareUrl = $"{baseUrl}/firmware/latest.bin";
 
-    logger.LogInformation("Display poll: {DeviceId} | Image: {Filename} | Refresh: {RefreshRate}ms",
-        deviceId, filename, refreshRate);
+    logger.LogInformation("Display poll: {DeviceId} | Image: {Filename} | Refresh: {RefreshRate}ms | URLs: {BaseUrl}",
+        deviceId, filename, refreshRate, baseUrl);
 
     var response = new DisplayResponse(
         filename: filename,
-        firmware_url: "http://localhost:2300/firmware/latest.bin",
+        firmware_url: absoluteFirmwareUrl,
         firmware_version: "1.0.0",
-        image_url: imagePath,
+        image_url: absoluteImageUrl,
         image_url_timeout: 0,
         refresh_rate: refreshRate,
         reset_firmware: false,
