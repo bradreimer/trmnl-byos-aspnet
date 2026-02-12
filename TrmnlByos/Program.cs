@@ -31,8 +31,19 @@ app.Use(async (context, next) =>
 app.UseSwagger();
 app.UseSwaggerUI();
 
-var dataRoot = "/data";
-Directory.CreateDirectory(dataRoot);
+// Determine data root directory
+var dataRoot = Environment.GetEnvironmentVariable("TEST_DATA_DIR") 
+    ?? (Directory.Exists("/data") ? "/data" : Path.Combine(Path.GetTempPath(), "trmnl-data"));
+try
+{
+    Directory.CreateDirectory(dataRoot);
+}
+catch
+{
+    // If /data is not writable, use temp directory
+    dataRoot = Path.Combine(Path.GetTempPath(), "trmnl-data");
+    Directory.CreateDirectory(dataRoot);
+}
 
 // simple in-memory store
 var screens = new Dictionary<string, ScreenInfo>(StringComparer.OrdinalIgnoreCase);
@@ -136,6 +147,9 @@ app.MapGet("/api/display", (HttpRequest request, ILogger<Program> logger) =>
 // POST /api/screens/{id}/image
 app.MapPost("/api/screens/{id}/image", async Task<Results<Ok<object>, BadRequest<string>>> (string id, HttpRequest request, ILogger<Program> logger) =>
 {
+    // Normalize to lowercase for consistent storage
+    var normalizedId = id.ToLowerInvariant();
+    
     var contentType = request.ContentType ?? MediaTypeNames.Image.Jpeg;
     if (!contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
     {
@@ -148,22 +162,22 @@ app.MapPost("/api/screens/{id}/image", async Task<Results<Ok<object>, BadRequest
         _ => ".jpg"
     };
 
-    var filePath = Path.Combine(dataRoot, $"{id}{ext}");
+    var filePath = Path.Combine(dataRoot, $"{normalizedId}{ext}");
 
     await using (var fs = File.Create(filePath))
     {
         await request.Body.CopyToAsync(fs);
     }
 
-    var screen = screens.TryGetValue(id, out var existing)
-        ? existing with { LastUpdated = DateTimeOffset.UtcNow, ImagePath = $"/screens/{id}{ext}" }
-        : new ScreenInfo(id, $"Screen {id}", null, DateTimeOffset.UtcNow, $"/screens/{id}{ext}");
+    var screen = screens.TryGetValue(normalizedId, out var existing)
+        ? existing with { LastUpdated = DateTimeOffset.UtcNow, ImagePath = $"/screens/{normalizedId}{ext}" }
+        : new ScreenInfo(normalizedId, $"Screen {normalizedId}", null, DateTimeOffset.UtcNow, $"/screens/{normalizedId}{ext}");
 
-    screens[id] = screen;
+    screens[normalizedId] = screen;
 
-    logger.LogInformation("Image uploaded: {ScreenId} | Type: {ContentType}", id, contentType);
+    logger.LogInformation("Image uploaded: {ScreenId} | Type: {ContentType}", normalizedId, contentType);
 
-    var result = new { id, path = screen.ImagePath! };
+    var result = new { id = normalizedId, path = screen.ImagePath! };
     return TypedResults.Ok((object)result);
 });
 
@@ -203,3 +217,5 @@ app.MapGet("/screens/{id}.png", (string id, ILogger<Program> logger) =>
 app.MapGet("/", () => Results.Ok(new { status = "ok", service = "trmnl-byod-dotnet" }));
 
 app.Run();
+
+public partial class Program { }
