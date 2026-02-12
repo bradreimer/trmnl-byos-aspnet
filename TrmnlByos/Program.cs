@@ -7,7 +7,104 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+
 var app = builder.Build();
+
+// Add API logging middleware
+app.Use(async (context, next) =>
+{
+    var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+    
+    // Log the incoming request
+    var request = context.Request;
+    var requestLog = new System.Text.StringBuilder();
+    requestLog.AppendLine("=== HTTP REQUEST ===");
+    requestLog.AppendLine($"Timestamp: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff}");
+    requestLog.AppendLine($"Method: {request.Method}");
+    requestLog.AppendLine($"Path: {request.Path}{request.QueryString}");
+    requestLog.AppendLine($"Scheme: {request.Scheme}");
+    requestLog.AppendLine($"Host: {request.Host}");
+    
+    requestLog.AppendLine("Headers:");
+    foreach (var header in request.Headers)
+    {
+        var sensitiveHeaders = new[] { "authorization", "cookie", "set-cookie", "x-api-key", "password" };
+        if (!sensitiveHeaders.Contains(header.Key.ToLower()))
+        {
+            requestLog.AppendLine($"  {header.Key}: {string.Join(", ", header.Value)}");
+        }
+        else
+        {
+            requestLog.AppendLine($"  {header.Key}: [REDACTED]");
+        }
+    }
+    
+    if (request.ContentLength > 0)
+    {
+        request.EnableBuffering();
+        request.Body.Position = 0;
+        using (var reader = new System.IO.StreamReader(request.Body, System.Text.Encoding.UTF8, leaveOpen: true))
+        {
+            var body = await reader.ReadToEndAsync();
+            requestLog.AppendLine($"Body: {body}");
+            request.Body.Position = 0;
+        }
+    }
+    
+    logger.LogInformation(requestLog.ToString());
+    
+    // Capture the original response stream
+    var originalBodyStream = context.Response.Body;
+    using (var responseBody = new System.IO.MemoryStream())
+    {
+        context.Response.Body = responseBody;
+        
+        try
+        {
+            await next(context);
+            
+            // Log the response
+            var response = context.Response;
+            var responseLog = new System.Text.StringBuilder();
+            responseLog.AppendLine("=== HTTP RESPONSE ===");
+            responseLog.AppendLine($"Timestamp: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff}");
+            responseLog.AppendLine($"Status Code: {response.StatusCode}");
+            
+            responseLog.AppendLine("Headers:");
+            foreach (var header in response.Headers)
+            {
+                var sensitiveHeaders = new[] { "authorization", "cookie", "set-cookie", "x-api-key", "password" };
+                if (!sensitiveHeaders.Contains(header.Key.ToLower()))
+                {
+                    responseLog.AppendLine($"  {header.Key}: {string.Join(", ", header.Value)}");
+                }
+                else
+                {
+                    responseLog.AppendLine($"  {header.Key}: [REDACTED]");
+                }
+            }
+            
+            if (context.Response.Body.CanRead && context.Response.Body.Length > 0)
+            {
+                context.Response.Body.Position = 0;
+                using (var reader = new System.IO.StreamReader(context.Response.Body, System.Text.Encoding.UTF8, leaveOpen: true))
+                {
+                    var body = await reader.ReadToEndAsync();
+                    responseLog.AppendLine($"Body: {body}");
+                    context.Response.Body.Position = 0;
+                }
+            }
+            
+            logger.LogInformation(responseLog.ToString());
+        }
+        finally
+        {
+            await responseBody.CopyToAsync(originalBodyStream);
+        }
+    }
+});
 
 app.UseSwagger();
 app.UseSwaggerUI();
@@ -161,5 +258,8 @@ app.MapGet("/screens/{id}.jpg", (string id) =>
 
 // Health
 app.MapGet("/", () => Results.Ok(new { status = "ok", service = "trmnl-byod-dotnet" }));
+
+// Add API logging middleware before other middleware
+
 
 app.Run();
