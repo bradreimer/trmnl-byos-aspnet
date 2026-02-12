@@ -1,3 +1,4 @@
 <Solution>
+  <Project Path="TrmnlByos.Tests/TrmnlByos.Tests.csproj" />
   <Project Path="TrmnlByos/TrmnlByos.csproj" />
 </Solution>

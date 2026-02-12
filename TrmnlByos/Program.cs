@@ -162,6 +162,19 @@ app.MapPost("/api/screens/{id}/image", async Task<Results<Ok<object>, BadRequest
         _ => ".jpg"
     };
 
+    // Delete any existing images with different extensions
+    var jpgPath = Path.Combine(dataRoot, $"{normalizedId}.jpg");
+    var pngPath = Path.Combine(dataRoot, $"{normalizedId}.png");
+    
+    if (ext == ".jpg" && File.Exists(pngPath))
+    {
+        File.Delete(pngPath);
+    }
+    else if (ext == ".png" && File.Exists(jpgPath))
+    {
+        File.Delete(jpgPath);
+    }
+
     var filePath = Path.Combine(dataRoot, $"{normalizedId}{ext}");
 
     await using (var fs = File.Create(filePath))
