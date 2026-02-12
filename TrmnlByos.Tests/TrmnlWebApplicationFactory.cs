@@ -7,18 +7,18 @@ namespace TrmnlByos.Tests;
 
 public class TrmnlWebApplicationFactory : WebApplicationFactory<Program>
 {
-    private readonly string _testDataDirectory;
+    private readonly string m_testDataDirectory;
 
     public TrmnlWebApplicationFactory()
     {
-        _testDataDirectory = Path.Combine(Path.GetTempPath(), "trmnl-tests", Guid.NewGuid().ToString());
-        Directory.CreateDirectory(_testDataDirectory);
+        m_testDataDirectory = Path.Combine(Path.GetTempPath(), "trmnl-tests", Guid.NewGuid().ToString());
+        Directory.CreateDirectory(m_testDataDirectory);
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         // Set the test data directory BEFORE building
-        Environment.SetEnvironmentVariable("TEST_DATA_DIR", _testDataDirectory);
+        Environment.SetEnvironmentVariable("TEST_DATA_DIR", m_testDataDirectory);
         
         // Override environment variable to use test directory
         builder.UseEnvironment("Testing");
@@ -33,9 +33,9 @@ public class TrmnlWebApplicationFactory : WebApplicationFactory<Program>
     {
         try
         {
-            if (Directory.Exists(_testDataDirectory))
+            if (Directory.Exists(m_testDataDirectory))
             {
-                Directory.Delete(_testDataDirectory, recursive: true);
+                Directory.Delete(m_testDataDirectory, recursive: true);
             }
         }
         catch

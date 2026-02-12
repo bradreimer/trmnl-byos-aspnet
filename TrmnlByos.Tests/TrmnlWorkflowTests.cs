@@ -7,38 +7,38 @@ namespace TrmnlByos.Tests;
 [TestClass]
 public class TrmnlWorkflowTests
 {
-    private WebApplicationFactory<Program> _factory = null!;
-    private HttpClient _client = null!;
-    private const string TestDeviceId = "AA:BB:CC:DD:EE:FF";
+    private WebApplicationFactory<Program> m_factory = null!;
+    private HttpClient m_client = null!;
+    private const string s_TestDeviceId = "AA:BB:CC:DD:EE:FF";
 
     [TestInitialize]
     public async Task Initialize()
     {
-        _factory = new TrmnlWebApplicationFactory();
-        _client = _factory.CreateClient();
+        m_factory = new TrmnlWebApplicationFactory();
+        m_client = m_factory.CreateClient();
     }
 
     [TestCleanup]
     public async Task Cleanup()
     {
-        _client.Dispose();
-        await _factory.DisposeAsync();
+        m_client.Dispose();
+        await m_factory.DisposeAsync();
     }
 
     [TestMethod]
     public async Task Workflow_DeviceSetup_ReturnsValidSetupResponse()
     {
         // Arrange
-        _client.DefaultRequestHeaders.Add("ID", TestDeviceId);
+        m_client.DefaultRequestHeaders.Add("ID", s_TestDeviceId);
 
         // Act
-        var response = await _client.GetAsync("/api/setup");
+        var response = await m_client.GetAsync("/api/setup");
 
         // Assert
         Assert.AreEqual(200, (int)response.StatusCode);
         var result = await response.Content.ReadFromJsonAsync<SetupResponse>();
         Assert.IsNotNull(result);
-        Assert.AreEqual(TestDeviceId, result.api_key);
+        Assert.AreEqual(s_TestDeviceId, result.api_key);
         Assert.IsFalse(string.IsNullOrEmpty(result.friendly_id));
         Assert.IsFalse(string.IsNullOrEmpty(result.image_url));
         Assert.IsTrue(result.message.Contains("TRMNL"));
@@ -48,18 +48,18 @@ public class TrmnlWorkflowTests
     public async Task Workflow_DisplayPoll_ReturnsValidDisplayResponse()
     {
         // Arrange
-        _client.DefaultRequestHeaders.Add("ID", TestDeviceId);
-        _client.DefaultRequestHeaders.Add("REFRESH_RATE", "100");
+        m_client.DefaultRequestHeaders.Add("ID", s_TestDeviceId);
+        m_client.DefaultRequestHeaders.Add("REFRESH_RATE", "100");
 
         // Act
-        var response = await _client.GetAsync("/api/display");
+        var response = await m_client.GetAsync("/api/display");
 
         // Assert
         Assert.AreEqual(200, (int)response.StatusCode);
         var result = await response.Content.ReadFromJsonAsync<DisplayResponse>();
         Assert.IsNotNull(result);
         Assert.IsFalse(string.IsNullOrEmpty(result.filename));
-        Assert.IsTrue(result.image_url.Contains(TestDeviceId.ToLowerInvariant()));
+        Assert.IsTrue(result.image_url.Contains(s_TestDeviceId.ToLowerInvariant()));
         Assert.IsTrue(result.firmware_url.StartsWith("http"));
         Assert.AreEqual(100, result.refresh_rate);
         Assert.IsFalse(result.reset_firmware);
@@ -70,7 +70,7 @@ public class TrmnlWorkflowTests
     public async Task Workflow_DeviceLogsData_Returns204()
     {
         // Arrange
-        _client.DefaultRequestHeaders.Add("ID", TestDeviceId);
+        m_client.DefaultRequestHeaders.Add("ID", s_TestDeviceId);
         var logRequest = new LogRequest(new[]
         {
             new LogEntry(
@@ -94,7 +94,7 @@ public class TrmnlWorkflowTests
         });
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/log", logRequest);
+        var response = await m_client.PostAsJsonAsync("/api/log", logRequest);
 
         // Assert
         Assert.AreEqual(204, (int)response.StatusCode);
@@ -109,14 +109,14 @@ public class TrmnlWorkflowTests
         content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
 
         // Act
-        var response = await _client.PostAsync($"/api/screens/{TestDeviceId}/image", content);
+        var response = await m_client.PostAsync($"/api/screens/{s_TestDeviceId}/image", content);
 
         // Assert
         Assert.AreEqual(200, (int)response.StatusCode);
         var result = await response.Content.ReadFromJsonAsync<Dictionary<string, object>>();
         Assert.IsNotNull(result);
-        Assert.AreEqual(TestDeviceId.ToLowerInvariant(), result["id"].ToString());
-        Assert.IsTrue(result["path"].ToString()!.Contains(TestDeviceId.ToLowerInvariant()));
+        Assert.AreEqual(s_TestDeviceId.ToLowerInvariant(), result["id"].ToString());
+        Assert.IsTrue(result["path"].ToString()!.Contains(s_TestDeviceId.ToLowerInvariant()));
     }
 
     [TestMethod]
@@ -127,10 +127,10 @@ public class TrmnlWorkflowTests
         var uploadContent = new ByteArrayContent(imageContent);
         uploadContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
 
-        await _client.PostAsync($"/api/screens/{TestDeviceId}/image", uploadContent);
+        await m_client.PostAsync($"/api/screens/{s_TestDeviceId}/image", uploadContent);
 
         // Act - Fetch the image
-        var response = await _client.GetAsync($"/screens/{TestDeviceId}.jpg");
+        var response = await m_client.GetAsync($"/screens/{s_TestDeviceId}.jpg");
 
         // Assert
         Assert.AreEqual(200, (int)response.StatusCode);
@@ -147,10 +147,10 @@ public class TrmnlWorkflowTests
         var uploadContent = new ByteArrayContent(imageContent);
         uploadContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
 
-        await _client.PostAsync($"/api/screens/{TestDeviceId}/image", uploadContent);
+        await m_client.PostAsync($"/api/screens/{s_TestDeviceId}/image", uploadContent);
 
         // Act - Try to fetch as PNG
-        var response = await _client.GetAsync($"/screens/{TestDeviceId}.png");
+        var response = await m_client.GetAsync($"/screens/{s_TestDeviceId}.png");
 
         // Assert
         Assert.AreEqual(404, (int)response.StatusCode);
@@ -160,16 +160,16 @@ public class TrmnlWorkflowTests
     public async Task Workflow_DisplayReturnsAbsoluteUrls()
     {
         // Arrange
-        _client.DefaultRequestHeaders.Add("ID", TestDeviceId);
+        m_client.DefaultRequestHeaders.Add("ID", s_TestDeviceId);
 
         // Upload an image first
         var imageContent = CreateTestImage();
         var uploadContent = new ByteArrayContent(imageContent);
         uploadContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
-        await _client.PostAsync($"/api/screens/{TestDeviceId}/image", uploadContent);
+        await m_client.PostAsync($"/api/screens/{s_TestDeviceId}/image", uploadContent);
 
         // Act
-        var response = await _client.GetAsync("/api/display");
+        var response = await m_client.GetAsync("/api/display");
         var result = await response.Content.ReadFromJsonAsync<DisplayResponse>();
 
         // Assert
@@ -184,7 +184,7 @@ public class TrmnlWorkflowTests
     public async Task Workflow_HealthCheck_Returns200()
     {
         // Act
-        var response = await _client.GetAsync("/");
+        var response = await m_client.GetAsync("/");
 
         // Assert
         Assert.AreEqual(200, (int)response.StatusCode);

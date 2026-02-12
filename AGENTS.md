@@ -99,9 +99,30 @@ When extending:
 
 ---
 
+## Code Style Guidelines
+
+### Naming Conventions
+
+- **Private instance members**: Start with `m_` (e.g., `m_factory`, `m_logger`)
+- **Static members**: Start with `s_` (e.g., `s_instance`, `s_defaultTimeout`)
+- Public properties: PascalCase (e.g., `Factory`, `Logger`)
+
+### Testing
+
+- Test framework: **MSTest** (Microsoft.VisualStudio.TestTools.UnitTesting)
+- Test organization: Place tests in `TrmnlByos.Tests` project
+- Test factory: Use `WebApplicationFactory<Program>` for integration tests
+- Test naming: `[TestMethod]` attributes with descriptive names (e.g., `Workflow_DeviceSetup_ReturnsValidSetupResponse`)
+- Assertions: Use MSTest `Assert.*` methods (e.g., `Assert.AreEqual()`, `Assert.IsTrue()`, `Assert.IsNotNull()`)
+- Setup/Teardown: Use `[TestInitialize]` and `[TestCleanup]` methods
+
+---
+
 ## Notes for Agents
 
 - Do not remove or rename existing endpoints.
 - Do not change JSON field names without versioning.
 - When adding new features, prefer additive changes.
 - Always reference the TRMNL BYOS API spec for firmware behavior.
+- Follow the naming conventions above when creating new classes and members.
+- Add integration tests for new endpoints using the MSTest framework.
