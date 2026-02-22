@@ -198,15 +198,17 @@ app.MapPost("/api/screens/{id}/image", async Task<Results<Ok<object>, BadRequest
 // GET /screens/{id}.jpg
 app.MapGet("/screens/{id}.jpg", (string id, ILogger<Program> logger) =>
 {
-    var jpgPath = Path.Combine(dataRoot, $"{id}.jpg");
+    // Normalize to lowercase for consistent lookup (matches upload behavior)
+    var normalizedId = id.ToLowerInvariant();
+    var jpgPath = Path.Combine(dataRoot, $"{normalizedId}.jpg");
 
     if (File.Exists(jpgPath))
     {
-        logger.LogInformation("Serving image: {ScreenId} (JPEG)", id);
+        logger.LogInformation("Serving image: {ScreenId} (JPEG)", normalizedId);
         return Results.File(jpgPath, "image/jpeg");
     }
 
-    logger.LogInformation("Image not found: {ScreenId}", id);
+    logger.LogInformation("Image not found: {ScreenId}", normalizedId);
     return Results.NotFound();
 });
 
@@ -214,15 +216,17 @@ app.MapGet("/screens/{id}.jpg", (string id, ILogger<Program> logger) =>
 // GET /screens/{id}.png
 app.MapGet("/screens/{id}.png", (string id, ILogger<Program> logger) =>
 {
-    var pngPath = Path.Combine(dataRoot, $"{id}.png");
+    // Normalize to lowercase for consistent lookup (matches upload behavior)
+    var normalizedId = id.ToLowerInvariant();
+    var pngPath = Path.Combine(dataRoot, $"{normalizedId}.png");
 
     if (File.Exists(pngPath))
     {
-        logger.LogInformation("Serving image: {ScreenId} (PNG)", id);
+        logger.LogInformation("Serving image: {ScreenId} (PNG)", normalizedId);
         return Results.File(pngPath, "image/png");
     }
 
-    logger.LogInformation("Image not found: {ScreenId}", id);
+    logger.LogInformation("Image not found: {ScreenId}", normalizedId);
     return Results.NotFound();
 });
 
