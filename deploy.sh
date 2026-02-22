@@ -5,14 +5,9 @@
 
 set -e
 
-echo "==================================="
-echo "TRMNL BYOD Server - Quick Deploy"
-echo "==================================="
-echo ""
-
-# Configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTAINER_NAME="trmnl-byos"
-WATCHTOWER_NAME="watchtower"
+UPDATER_NAME="wut-updater"
 IMAGE="ghcr.io/bradreimer/trmnl-byos-aspnet:latest"
 PORT="2300"
 DATA_DIR="${HOME}/trmnl-data"
@@ -53,11 +48,11 @@ if docker ps -a | grep -q "$CONTAINER_NAME"; then
     echo "  ✓ Removed old container"
 fi
 
-if docker ps -a | grep -q "$WATCHTOWER_NAME"; then
-    echo "  Stopping existing $WATCHTOWER_NAME container..."
-    docker stop "$WATCHTOWER_NAME" 2>/dev/null || true
-    docker rm "$WATCHTOWER_NAME" 2>/dev/null || true
-    echo "  ✓ Removed old watchtower"
+if docker ps -a | grep -q "$UPDATER_NAME"; then
+    echo "  Stopping existing $UPDATER_NAME container..."
+    docker stop "$UPDATER_NAME" 2>/dev/null || true
+    docker rm "$UPDATER_NAME" 2>/dev/null || true
+    echo "  ✓ Removed old updater"
 fi
 echo ""
 
@@ -90,18 +85,21 @@ else
 fi
 echo ""
 
-# Run Watchtower for auto-updates
-echo "Starting Watchtower for automatic updates..."
+# Run What's Up Docker (wut) updater for automatic updates
+# Make update script executable
+chmod +x "$SCRIPT_DIR/update-container.sh" 2>/dev/null || true
+
+# Run Wut-style auto-updater (checks for new images and restarts container)
+echo "Starting auto-updater (What's Up Docker integration)..."
 docker run -d \
-  --name "$WATCHTOWER_NAME" \
+  --name "$UPDATER_NAME" \
   --restart unless-stopped \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  containrrr/watchtower \
-  "$CONTAINER_NAME" \
-  --interval "$UPDATE_INTERVAL" \
-  --cleanup
+  -v "$SCRIPT_DIR/update-container.sh:/update.sh:ro" \
+  alpine:latest \
+  /bin/sh -c "apk add --no-cache docker-cli bash && /update.sh $UPDATE_INTERVAL"
 
-echo "✓ Watchtower is monitoring for updates"
+echo "✓ Auto-updater is monitoring for new images"
 echo ""
 
 # Test the server
@@ -131,8 +129,8 @@ echo "  Stop server:     docker stop $CONTAINER_NAME"
 echo "  Start server:    docker start $CONTAINER_NAME"
 echo "  Restart server:  docker restart $CONTAINER_NAME"
 echo ""
-echo "  Watchtower logs: docker logs -f $WATCHTOWER_NAME"
-echo "  Force update:    docker restart $WATCHTOWER_NAME"
+echo "  Updater logs:    docker logs -f $UPDATER_NAME"
+echo "  Force check:     docker restart $UPDATER_NAME"
 echo ""
 echo "Next Steps:"
 echo "  1. Configure your TRMNL device to point to this server"
