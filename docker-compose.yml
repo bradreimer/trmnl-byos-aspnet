@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   trmnl_byos:
     container_name: trmnl_byos
