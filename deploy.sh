@@ -14,7 +14,7 @@ echo ""
 CONTAINER_NAME="trmnl-byos"
 WATCHTOWER_NAME="watchtower"
 IMAGE="ghcr.io/bradreimer/trmnl-byos-aspnet:latest"
-PORT="3000"
+PORT="2300"
 DATA_DIR="${HOME}/trmnl-data"
 UPDATE_INTERVAL="3600"  # 1 hour
 

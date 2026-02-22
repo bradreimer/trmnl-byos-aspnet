@@ -12,7 +12,7 @@ docker pull ghcr.io/bradreimer/trmnl-byos-aspnet:latest
 docker run -d \
   --name trmnl-byos \
   --restart unless-stopped \
-  -p 3000:3000 \
+  -p 2300:3000 \
   -v ~/trmnl-data:/data \
   ghcr.io/bradreimer/trmnl-byos-aspnet:latest
 ```
@@ -30,7 +30,7 @@ docker logs trmnl-byos
 docker logs -f trmnl-byos
 
 # Test the API
-curl http://localhost:3000
+curl http://localhost:2300
 ```
 
 ## Configuration Options
@@ -42,6 +42,13 @@ curl http://localhost:3000
 docker run -d \
   --name trmnl-byos \
   -p 8080:3000 \
+  -v ~/trmnl-data:/data \
+  ghcr.io/bradreimer/trmnl-byos-aspnet:latest
+
+# Default port 2300
+docker run -d \
+  --name trmnl-byos \
+  -p 2300:3000 \
   -v ~/trmnl-data:/data \
   ghcr.io/bradreimer/trmnl-byos-aspnet:latest
 ```
@@ -64,7 +71,7 @@ docker volume create trmnl-data
 ```bash
 docker run -d \
   --name trmnl-byos \
-  -p 3000:3000 \
+  -p 2300:3000 \
   -v ~/trmnl-data:/data \
   -e ASPNETCORE_ENVIRONMENT=Production \
   -e ASPNETCORE_URLS=http://0.0.0.0:3000 \
@@ -130,7 +137,7 @@ services:
     container_name: trmnl-byos
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "2300:3000"
     volumes:
       - ./data:/data
     environment:
@@ -159,7 +166,7 @@ docker-compose up -d
 The server provides a health check endpoint:
 
 ```bash
-curl http://localhost:3000
+curl http://localhost:2300
 # Response: {"status":"ok","service":"trmnl-byod-dotnet"}
 ```
 
@@ -172,9 +179,9 @@ curl http://localhost:3000
 docker logs trmnl-byos
 
 # Check if port is already in use
-lsof -i :3000
+lsof -i :2300
 # or
-netstat -an | grep 3000
+netstat -an | grep 2300
 ```
 
 ### Permission Issues with Data Volume
