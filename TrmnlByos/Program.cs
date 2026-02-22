@@ -18,13 +18,13 @@ app.Use(async (context, next) =>
     var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
     var request = context.Request;
     var deviceId = request.Headers["ID"].FirstOrDefault() ?? "unknown";
-    
-    logger.LogInformation("[{Timestamp:yyyy-MM-dd HH:mm:ss}] {Method} {Path} (Device: {DeviceId})", 
+
+    logger.LogInformation("[{Timestamp:yyyy-MM-dd HH:mm:ss}] {Method} {Path} (Device: {DeviceId})",
         DateTime.UtcNow, request.Method, request.Path, deviceId);
-    
+
     await next(context);
-    
-    logger.LogInformation("[{Timestamp:yyyy-MM-dd HH:mm:ss}] {Method} {Path} -> {StatusCode} (Device: {DeviceId})", 
+
+    logger.LogInformation("[{Timestamp:yyyy-MM-dd HH:mm:ss}] {Method} {Path} -> {StatusCode} (Device: {DeviceId})",
         DateTime.UtcNow, request.Method, request.Path, context.Response.StatusCode, deviceId);
 });
 
@@ -32,7 +32,7 @@ app.UseSwagger();
 app.UseSwaggerUI();
 
 // Determine data root directory
-var dataRoot = Environment.GetEnvironmentVariable("TEST_DATA_DIR") 
+var dataRoot = Environment.GetEnvironmentVariable("TEST_DATA_DIR")
     ?? (Directory.Exists("/data") ? "/data" : Path.Combine(Path.GetTempPath(), "trmnl-data"));
 try
 {
@@ -115,13 +115,13 @@ app.MapGet("/api/display", (HttpRequest request, ILogger<Program> logger) =>
 
     var imagePath = screen.ImagePath ?? $"/screens/{screenId}.jpg";
     var filename = Path.GetFileName(imagePath);
-    
+
     // Get the host from the request
     var host = request.Host.Host;
     var port = request.Host.Port ?? (request.IsHttps ? 443 : 80);
     var scheme = request.Scheme;
     var baseUrl = $"{scheme}://{host}:{port}";
-    
+
     var absoluteImageUrl = $"{baseUrl}{imagePath}";
     var absoluteFirmwareUrl = $"{baseUrl}/firmware/latest.bin";
 
@@ -149,7 +149,7 @@ app.MapPost("/api/screens/{id}/image", async Task<Results<Ok<object>, BadRequest
 {
     // Normalize to lowercase for consistent storage
     var normalizedId = id.ToLowerInvariant();
-    
+
     var contentType = request.ContentType ?? MediaTypeNames.Image.Jpeg;
     if (!contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
     {
@@ -165,7 +165,7 @@ app.MapPost("/api/screens/{id}/image", async Task<Results<Ok<object>, BadRequest
     // Delete any existing images with different extensions
     var jpgPath = Path.Combine(dataRoot, $"{normalizedId}.jpg");
     var pngPath = Path.Combine(dataRoot, $"{normalizedId}.png");
-    
+
     if (ext == ".jpg" && File.Exists(pngPath))
     {
         File.Delete(pngPath);

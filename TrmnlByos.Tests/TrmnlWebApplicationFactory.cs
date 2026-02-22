@@ -19,10 +19,10 @@ public class TrmnlWebApplicationFactory : WebApplicationFactory<Program>
     {
         // Set the test data directory BEFORE building
         Environment.SetEnvironmentVariable("TEST_DATA_DIR", m_testDataDirectory);
-        
+
         // Override environment variable to use test directory
         builder.UseEnvironment("Testing");
-        
+
         builder.ConfigureServices(services =>
         {
             // Override any services if needed for testing
