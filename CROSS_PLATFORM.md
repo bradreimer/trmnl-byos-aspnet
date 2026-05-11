@@ -5,11 +5,13 @@ This project uses .NET 10 and supports building on Linux, macOS, and Windows.
 ## Supported Platforms
 
 ### Development & Building
+
 - **Linux**: x64, ARM64
 - **macOS**: x64 (Intel), ARM64 (Apple Silicon)
 - **Windows**: x64, ARM64
 
 ### Docker Containers
+
 - **linux/amd64** (x64)
 - **linux/arm64** (ARM64/Apple Silicon)
 
@@ -34,31 +36,37 @@ The project automatically detects your platform and builds accordingly.
 When deploying, specify the target runtime identifier:
 
 #### Linux x64
+
 ```bash
 dotnet publish -c Release -r linux-x64 --self-contained true
 ```
 
 #### Linux ARM64 (Raspberry Pi, ARM servers)
+
 ```bash
 dotnet publish -c Release -r linux-arm64 --self-contained true
 ```
 
 #### macOS x64 (Intel Macs)
+
 ```bash
 dotnet publish -c Release -r osx-x64 --self-contained true
 ```
 
 #### macOS ARM64 (Apple Silicon)
+
 ```bash
 dotnet publish -c Release -r osx-arm64 --self-contained true
 ```
 
 #### Windows x64
+
 ```bash
 dotnet publish -c Release -r win-x64 --self-contained true
 ```
 
 #### Windows ARM64
+
 ```bash
 dotnet publish -c Release -r win-arm64 --self-contained true
 ```
@@ -68,6 +76,7 @@ dotnet publish -c Release -r win-arm64 --self-contained true
 The project's Docker images are built for multiple architectures:
 
 ### Pull the Correct Architecture Automatically
+
 ```bash
 docker pull ghcr.io/YOUR_USERNAME/trmnl-byos-aspnet:latest
 ```
@@ -75,6 +84,7 @@ docker pull ghcr.io/YOUR_USERNAME/trmnl-byos-aspnet:latest
 Docker automatically selects the correct image for your architecture (amd64 or arm64).
 
 ### Verify Architecture
+
 ```bash
 docker image inspect ghcr.io/YOUR_USERNAME/trmnl-byos-aspnet:latest | grep Architecture
 ```
@@ -103,14 +113,17 @@ Both architectures are pushed to GitHub Container Registry with the same tag.
 ## Development Recommendations
 
 ### For Local Development
+
 - Use standard `dotnet build` and `dotnet run` without specifying runtime
 - The project will build for your native platform automatically
 
 ### For Testing Cross-Platform
+
 - Use `dotnet publish -r <runtime>` to test specific platform builds
 - Docker is recommended for testing Linux builds on macOS/Windows
 
 ### For Deployment
+
 - **Docker**: Pull the multi-arch image (recommended)
 - **Binary**: Publish with `--self-contained true` for the target runtime
 - **Framework-dependent**: Omit `--self-contained` if .NET 10 is installed on target
@@ -120,7 +133,7 @@ Both architectures are pushed to GitHub Container Registry with the same tag.
 Common RIDs used in this project:
 
 | Platform | Architecture | RID |
-|----------|-------------|-----|
+| -------- | ------------ | --- |
 | Linux | x64 | `linux-x64` |
 | Linux | ARM64 | `linux-arm64` |
 | macOS | x64 | `osx-x64` |
@@ -128,7 +141,7 @@ Common RIDs used in this project:
 | Windows | x64 | `win-x64` |
 | Windows | ARM64 | `win-arm64` |
 
-For a complete list, see: https://learn.microsoft.com/en-us/dotnet/core/rid-catalog
+For a complete list, see [RID catalog](https://learn.microsoft.com/en-us/dotnet/core/rid-catalog).
 
 ## Troubleshooting
 
@@ -143,6 +156,7 @@ For a complete list, see: https://learn.microsoft.com/en-us/dotnet/core/rid-cata
 **Issue**: Docker BuildX not enabled or not enough memory
 
 **Solutions**:
+
 ```bash
 # Enable BuildX
 docker buildx create --use
@@ -162,19 +176,21 @@ docker buildx create --use
 ### Self-Contained vs Framework-Dependent
 
 **Self-Contained** (default for Release):
-- ✅ No .NET runtime required on target
-- ✅ Specific .NET version guaranteed
-- ❌ Larger binary size (~70MB)
+
+- No .NET runtime required on target
+- Specific .NET version guaranteed
+- Larger binary size (~70MB)
 
 **Framework-Dependent**:
-- ✅ Smaller binary size (~1MB)
-- ❌ Requires .NET 10 runtime on target
-- ❌ Runtime version mismatch possible
+
+- Smaller binary size (~1MB)
+- Requires .NET 10 runtime on target
+- Runtime version mismatch possible
 
 ### Architecture Performance
 
 | Architecture | Use Case | Performance |
-|-------------|----------|-------------|
+| ------------ | -------- | ----------- |
 | linux/amd64 | Cloud VMs, traditional servers | Excellent |
 | linux/arm64 | AWS Graviton, cost-efficient cloud | Excellent |
 | osx-arm64 | Apple Silicon development | Excellent |
