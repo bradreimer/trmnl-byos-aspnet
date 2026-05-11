@@ -1,16 +1,27 @@
+using System.Collections.Concurrent;
+using Microsoft.AspNetCore.Http.Extensions;
 using System.Net.Mime;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.HttpOverrides;
 using TrmnlByos.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor
+        | ForwardedHeaders.XForwardedHost
+        | ForwardedHeaders.XForwardedProto;
+});
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 
 var app = builder.Build();
+
+app.UseForwardedHeaders();
 
 // Simple request/response logging middleware
 app.Use(async (context, next) =>
@@ -45,8 +56,12 @@ catch
     Directory.CreateDirectory(dataRoot);
 }
 
-// simple in-memory store
-var screens = new Dictionary<string, ScreenInfo>(StringComparer.OrdinalIgnoreCase);
+const int DefaultRefreshRate = 100;
+const int DefaultMaxImageBytes = 10 * 1024 * 1024;
+var maxImageBytes = builder.Configuration.GetValue<int?>("Uploads:MaxImageBytes") ?? DefaultMaxImageBytes;
+
+// simple thread-safe in-memory store
+var screens = new ConcurrentDictionary<string, ScreenInfo>(StringComparer.OrdinalIgnoreCase);
 
 // ---- Firmware: Setup ----
 // GET /api/setup
@@ -56,17 +71,13 @@ app.MapGet("/api/setup", (HttpRequest request, ILogger<Program> logger) =>
     var deviceId = request.Headers["ID"].FirstOrDefault() ?? "unknown";
     var screenId = deviceId.ToLowerInvariant();
 
-    if (!screens.TryGetValue(screenId, out var screen))
-    {
-        screen = new ScreenInfo(
-            screenId,
-            $"Screen {screenId}",
-            null,
-            DateTimeOffset.UtcNow,
-            null
-        );
-        screens[screenId] = screen;
-    }
+    screens.GetOrAdd(screenId, static key => new ScreenInfo(
+        key,
+        $"Screen {key}",
+        null,
+        DateTimeOffset.UtcNow,
+        null
+    ));
 
     logger.LogInformation("Device setup: {DeviceId}", deviceId);
 
@@ -82,15 +93,20 @@ app.MapGet("/api/setup", (HttpRequest request, ILogger<Program> logger) =>
 
 // ---- Firmware: Log ----
 // POST /api/log
-app.MapPost("/api/log", async (LogRequest logRequest, ILogger<Program> logger) =>
+// POST /api/logs (compatibility alias)
+static IResult LogDeviceTelemetry(LogRequest logRequest, ILogger<Program> logger)
 {
     foreach (var entry in logRequest.logs)
     {
         logger.LogInformation("Device telemetry: FW {FirmwareVersion} | Battery {BatteryVoltage}V | WiFi {WiFiSignal}dBm | Heap {FreeHeap}B | {Message}",
             entry.firmware_version, entry.battery_voltage, entry.wifi_signal, entry.free_heap_size, entry.message);
     }
+
     return Results.NoContent();
-});
+}
+
+app.MapPost("/api/log", LogDeviceTelemetry);
+app.MapPost("/api/logs", LogDeviceTelemetry);
 
 // ---- Firmware: Display ----
 // GET /api/display
@@ -99,34 +115,24 @@ app.MapGet("/api/display", (HttpRequest request, ILogger<Program> logger) =>
     var deviceId = request.Headers["ID"].FirstOrDefault() ?? "unknown";
     var screenId = deviceId.ToLowerInvariant();
     var refreshHeader = request.Headers["REFRESH_RATE"].FirstOrDefault();
-    var refreshRate = int.TryParse(refreshHeader, out var r) ? r : 100;
+    var refreshRate = int.TryParse(refreshHeader, out var r) && r > 0 ? r : DefaultRefreshRate;
 
-    if (!screens.TryGetValue(screenId, out var screen))
-    {
-        screen = new ScreenInfo(
-            screenId,
-            $"Screen {screenId}",
-            null,
-            DateTimeOffset.MinValue,
-            null
-        );
-        screens[screenId] = screen;
-    }
+    var screen = screens.GetOrAdd(screenId, static key => new ScreenInfo(
+        key,
+        $"Screen {key}",
+        null,
+        DateTimeOffset.MinValue,
+        null
+    ));
 
     var imagePath = screen.ImagePath ?? $"/screens/{screenId}.jpg";
     var filename = Path.GetFileName(imagePath);
 
-    // Get the host from the request
-    var host = request.Host.Host;
-    var port = request.Host.Port ?? (request.IsHttps ? 443 : 80);
-    var scheme = request.Scheme;
-    var baseUrl = $"{scheme}://{host}:{port}";
+    var absoluteImageUrl = UriHelper.BuildAbsolute(request.Scheme, request.Host, request.PathBase, imagePath);
+    var absoluteFirmwareUrl = UriHelper.BuildAbsolute(request.Scheme, request.Host, request.PathBase, "/firmware/latest.bin");
 
-    var absoluteImageUrl = $"{baseUrl}{imagePath}";
-    var absoluteFirmwareUrl = $"{baseUrl}/firmware/latest.bin";
-
-    logger.LogInformation("Display poll: {DeviceId} | Image: {Filename} | Refresh: {RefreshRate}ms | URLs: {BaseUrl}",
-        deviceId, filename, refreshRate, baseUrl);
+    logger.LogInformation("Display poll: {DeviceId} | Image: {Filename} | Refresh: {RefreshRate}ms",
+        deviceId, filename, refreshRate);
 
     var response = new DisplayResponse(
         filename: filename,
@@ -145,20 +151,28 @@ app.MapGet("/api/display", (HttpRequest request, ILogger<Program> logger) =>
 
 // ---- BYOD: upload image ----
 // POST /api/screens/{id}/image
-app.MapPost("/api/screens/{id}/image", async Task<Results<Ok<object>, BadRequest<string>>> (string id, HttpRequest request, ILogger<Program> logger) =>
+app.MapPost("/api/screens/{id}/image", async Task<IResult> (string id, HttpRequest request, ILogger<Program> logger) =>
 {
     // Normalize to lowercase for consistent storage
     var normalizedId = id.ToLowerInvariant();
 
-    var contentType = request.ContentType ?? MediaTypeNames.Image.Jpeg;
-    if (!contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+    if (request.ContentLength is long contentLength && contentLength > maxImageBytes)
     {
-        return TypedResults.BadRequest("Content-Type must be image/*");
+        return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
     }
 
-    var ext = contentType switch
+    var contentType = request.ContentType ?? MediaTypeNames.Image.Jpeg;
+    var mediaType = contentType.Split(';', 2, StringSplitOptions.TrimEntries)[0];
+    if (!mediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.BadRequest("Content-Type must be image/*");
+    }
+
+    var ext = mediaType.ToLowerInvariant() switch
     {
         "image/png" => ".png",
+        "image/jpg" => ".jpg",
+        "image/jpeg" => ".jpg",
         _ => ".jpg"
     };
 
@@ -179,7 +193,13 @@ app.MapPost("/api/screens/{id}/image", async Task<Results<Ok<object>, BadRequest
 
     await using (var fs = File.Create(filePath))
     {
-        await request.Body.CopyToAsync(fs);
+        await request.Body.CopyToAsync(fs, request.HttpContext.RequestAborted);
+    }
+
+    if (new FileInfo(filePath).Length > maxImageBytes)
+    {
+        File.Delete(filePath);
+        return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
     }
 
     var screen = screens.TryGetValue(normalizedId, out var existing)
@@ -191,7 +211,7 @@ app.MapPost("/api/screens/{id}/image", async Task<Results<Ok<object>, BadRequest
     logger.LogInformation("Image uploaded: {ScreenId} | Type: {ContentType}", normalizedId, contentType);
 
     var result = new { id = normalizedId, path = screen.ImagePath! };
-    return TypedResults.Ok((object)result);
+    return Results.Ok((object)result);
 });
 
 // ---- BYOD: serve JPEG image ----

@@ -7,7 +7,7 @@ This file describes the API surface of the TRMNL BYOD server so that an AI agent
 
 All firmware endpoints are derived from:
 
-https://github.com/usetrmnl/byos_hanami/blob/main/doc/api.adoc
+[https://github.com/usetrmnl/byos_hanami/blob/main/doc/api.adoc](https://github.com/usetrmnl/byos_hanami/blob/main/doc/api.adoc)
 
 This document defines:
 
@@ -32,10 +32,12 @@ The implementation in this project mirrors the examples in the spec.
   - `REFRESH_RATE`
 - Returns a `SetupResponse` DTO.
 
-### 2. `POST /api/logs`
+### 2. `POST /api/log`
 
 - Accepts a `LogEntry` DTO.
 - Returns `204 No Content`.
+
+Compatibility alias: `POST /api/logs`.
 
 ### 3. `GET /api/display`
 
@@ -60,7 +62,7 @@ All request/response bodies are defined under:
 
 ```plain
 Models/
-SetupModels.cs
+SetupModel.cs
 LogModels.cs
 DisplayModels.cs
 ScreenInfo.cs

@@ -101,6 +101,40 @@ public class TrmnlWorkflowTests
     }
 
     [TestMethod]
+    public async Task Workflow_DeviceLogsData_AliasEndpoint_Returns204()
+    {
+        // Arrange
+        m_client.DefaultRequestHeaders.Add("ID", s_TestDeviceId);
+        var logRequest = new LogRequest(new[]
+        {
+            new LogEntry(
+                id: 2,
+                message: "Test log alias endpoint",
+                wifi_status: "connected",
+                created_at: DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                sleep_duration: 30,
+                refresh_rate: 100,
+                free_heap_size: 165000,
+                max_alloc_size: 180000,
+                source_path: "src/main.cpp",
+                wake_reason: "timer",
+                firmware_version: "1.5.2",
+                retry: 1,
+                battery_voltage: 3.8f,
+                source_line: 100,
+                special_function: "none",
+                wifi_signal: -65
+            )
+        });
+
+        // Act
+        var response = await m_client.PostAsJsonAsync("/api/logs", logRequest);
+
+        // Assert
+        Assert.AreEqual(204, (int)response.StatusCode);
+    }
+
+    [TestMethod]
     public async Task Workflow_UploadImage_ReturnsImagePath()
     {
         // Arrange
@@ -154,6 +188,65 @@ public class TrmnlWorkflowTests
 
         // Assert
         Assert.AreEqual(404, (int)response.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task Workflow_UploadPngAndServePng_Returns200()
+    {
+        // Arrange
+        var pngBytes = new byte[]
+        {
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+            0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+            0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+            0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41,
+            0x54, 0x78, 0x9C, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
+            0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D,
+            0xB1, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
+            0x44, 0xAE, 0x42, 0x60, 0x82
+        };
+
+        var uploadContent = new ByteArrayContent(pngBytes);
+        uploadContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
+
+        // Act
+        var uploadResponse = await m_client.PostAsync($"/api/screens/{s_TestDeviceId}/image", uploadContent);
+        var response = await m_client.GetAsync($"/screens/{s_TestDeviceId}.png");
+
+        // Assert
+        Assert.AreEqual(200, (int)uploadResponse.StatusCode);
+        Assert.AreEqual(200, (int)response.StatusCode);
+        Assert.AreEqual("image/png", response.Content.Headers.ContentType?.MediaType);
+    }
+
+    [TestMethod]
+    public async Task Workflow_UploadInvalidContentType_Returns400()
+    {
+        // Arrange
+        var content = new ByteArrayContent(new byte[] { 0x01, 0x02, 0x03 });
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/plain");
+
+        // Act
+        var response = await m_client.PostAsync($"/api/screens/{s_TestDeviceId}/image", content);
+
+        // Assert
+        Assert.AreEqual(400, (int)response.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task Workflow_UploadTooLarge_Returns413()
+    {
+        // Arrange
+        var tooLargeBytes = new byte[2048];
+        var content = new ByteArrayContent(tooLargeBytes);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+
+        // Act
+        var response = await m_client.PostAsync($"/api/screens/{s_TestDeviceId}/image", content);
+
+        // Assert
+        Assert.AreEqual(413, (int)response.StatusCode);
     }
 
     [TestMethod]

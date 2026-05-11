@@ -12,12 +12,14 @@ The firmware interacts with three core endpoints:
 
 1. GET `/api/setup`
 2. GET `/api/display`
-3. POST `/api/logs`
+3. POST `/api/log`
+
+For compatibility with older clients, POST `/api/logs` is also accepted as an alias.
 
 The BYOD server also supports:
 
-4. POST `/api/screens/{id}/image`
-5. GET `/screens/{id}.jpg`
+1. POST `/api/screens/{id}/image`
+2. GET `/screens/{id}.jpg`
 
 All request/response bodies are strongly typed using C# type-safe objects (DTOs).
 
@@ -53,7 +55,7 @@ Images are stored in:
 TrmnlByos/
   Program.cs
   Models/
-    SetupModels.cs
+      SetupModel.cs
     LogModels.cs
     DisplayModels.cs
     ScreenInfo.cs
