@@ -216,11 +216,11 @@ public class TrmnlWorkflowTests
 
         var uploadContent = new ByteArrayContent(pngBytes);
         uploadContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
-    var hash = Convert.ToHexString(SHA256.HashData(pngBytes)).ToLowerInvariant();
+        var hash = Convert.ToHexString(SHA256.HashData(pngBytes)).ToLowerInvariant();
 
         // Act
         var uploadResponse = await m_client.PostAsync($"/api/screens/{s_TestDeviceId}/image", uploadContent);
-    var response = await m_client.GetAsync($"/screens/{hash}.png");
+        var response = await m_client.GetAsync($"/screens/{hash}.png");
 
         // Assert
         Assert.AreEqual(200, (int)uploadResponse.StatusCode);
