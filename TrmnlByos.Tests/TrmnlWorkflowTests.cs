@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Mvc.Testing;
 using TrmnlByos.Models;
 
@@ -141,6 +142,7 @@ public class TrmnlWorkflowTests
         var imageContent = CreateTestImage();
         var content = new ByteArrayContent(imageContent);
         content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+        var expectedHash = Convert.ToHexString(SHA256.HashData(imageContent)).ToLowerInvariant();
 
         // Act
         var response = await m_client.PostAsync($"/api/screens/{s_TestDeviceId}/image", content);
@@ -150,7 +152,7 @@ public class TrmnlWorkflowTests
         var result = await response.Content.ReadFromJsonAsync<Dictionary<string, object>>();
         Assert.IsNotNull(result);
         Assert.AreEqual(s_TestDeviceId.ToLowerInvariant(), result["id"].ToString());
-        Assert.IsTrue(result["path"].ToString()!.Contains(s_TestDeviceId.ToLowerInvariant()));
+        Assert.AreEqual($"/screens/{expectedHash}.jpg", result["path"].ToString());
     }
 
     [TestMethod]
@@ -161,10 +163,14 @@ public class TrmnlWorkflowTests
         var uploadContent = new ByteArrayContent(imageContent);
         uploadContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
 
-        await m_client.PostAsync($"/api/screens/{s_TestDeviceId}/image", uploadContent);
+        var uploadResponse = await m_client.PostAsync($"/api/screens/{s_TestDeviceId}/image", uploadContent);
+        var uploadResult = await uploadResponse.Content.ReadFromJsonAsync<Dictionary<string, object>>();
+        Assert.IsNotNull(uploadResult);
+        var imagePath = uploadResult["path"].ToString();
+        Assert.IsNotNull(imagePath);
 
         // Act - Fetch the image
-        var response = await m_client.GetAsync($"/screens/{s_TestDeviceId}.jpg");
+        var response = await m_client.GetAsync(imagePath);
 
         // Assert
         Assert.AreEqual(200, (int)response.StatusCode);
@@ -182,9 +188,10 @@ public class TrmnlWorkflowTests
         uploadContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
 
         await m_client.PostAsync($"/api/screens/{s_TestDeviceId}/image", uploadContent);
+        var hash = Convert.ToHexString(SHA256.HashData(imageContent)).ToLowerInvariant();
 
         // Act - Try to fetch as PNG
-        var response = await m_client.GetAsync($"/screens/{s_TestDeviceId}.png");
+        var response = await m_client.GetAsync($"/screens/{hash}.png");
 
         // Assert
         Assert.AreEqual(404, (int)response.StatusCode);
@@ -209,10 +216,11 @@ public class TrmnlWorkflowTests
 
         var uploadContent = new ByteArrayContent(pngBytes);
         uploadContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
+    var hash = Convert.ToHexString(SHA256.HashData(pngBytes)).ToLowerInvariant();
 
         // Act
         var uploadResponse = await m_client.PostAsync($"/api/screens/{s_TestDeviceId}/image", uploadContent);
-        var response = await m_client.GetAsync($"/screens/{s_TestDeviceId}.png");
+    var response = await m_client.GetAsync($"/screens/{hash}.png");
 
         // Assert
         Assert.AreEqual(200, (int)uploadResponse.StatusCode);
@@ -238,7 +246,7 @@ public class TrmnlWorkflowTests
     public async Task Workflow_UploadTooLarge_Returns413()
     {
         // Arrange
-        var tooLargeBytes = new byte[2048];
+        var tooLargeBytes = new byte[11 * 1024 * 1024];
         var content = new ByteArrayContent(tooLargeBytes);
         content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
 
@@ -247,6 +255,81 @@ public class TrmnlWorkflowTests
 
         // Assert
         Assert.AreEqual(413, (int)response.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task Workflow_DisplayReturnsLatestHashAfterImageChanges()
+    {
+        // Arrange
+        m_client.DefaultRequestHeaders.Add("ID", s_TestDeviceId);
+
+        var firstImage = CreateTestImage();
+        var firstUpload = new ByteArrayContent(firstImage);
+        firstUpload.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+
+        // Act - upload first image and verify display points to first hash
+        var firstUploadResponse = await m_client.PostAsync($"/api/screens/{s_TestDeviceId}/image", firstUpload);
+        Assert.AreEqual(200, (int)firstUploadResponse.StatusCode);
+        var firstDisplayResponse = await m_client.GetAsync("/api/display");
+        var firstDisplay = await firstDisplayResponse.Content.ReadFromJsonAsync<DisplayResponse>();
+
+        // Upload a different image and verify display updates to new hash
+        var secondImage = CreateDifferentTestImage();
+        var secondUpload = new ByteArrayContent(secondImage);
+        secondUpload.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+        var secondUploadResponse = await m_client.PostAsync($"/api/screens/{s_TestDeviceId}/image", secondUpload);
+        Assert.AreEqual(200, (int)secondUploadResponse.StatusCode);
+        var secondDisplayResponse = await m_client.GetAsync("/api/display");
+        var secondDisplay = await secondDisplayResponse.Content.ReadFromJsonAsync<DisplayResponse>();
+
+        // Assert
+        Assert.IsNotNull(firstDisplay);
+        Assert.IsNotNull(secondDisplay);
+
+        var firstHash = Convert.ToHexString(SHA256.HashData(firstImage)).ToLowerInvariant();
+        var secondHash = Convert.ToHexString(SHA256.HashData(secondImage)).ToLowerInvariant();
+
+        Assert.AreEqual($"{firstHash}.jpg", firstDisplay.filename);
+        Assert.AreEqual($"{secondHash}.jpg", secondDisplay.filename);
+        Assert.AreNotEqual(firstDisplay.filename, secondDisplay.filename);
+        Assert.IsTrue(secondDisplay.image_url.EndsWith($"/screens/{secondHash}.jpg"));
+    }
+
+    [TestMethod]
+    public async Task Workflow_ReuploadSameImage_KeepsSameHashFilename()
+    {
+        // Arrange
+        m_client.DefaultRequestHeaders.Add("ID", s_TestDeviceId);
+        var image = CreateTestImage();
+        var expectedHash = Convert.ToHexString(SHA256.HashData(image)).ToLowerInvariant();
+
+        // Act - first upload and display poll
+        var firstUpload = new ByteArrayContent(image);
+        firstUpload.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+        var firstUploadResponse = await m_client.PostAsync($"/api/screens/{s_TestDeviceId}/image", firstUpload);
+        Assert.AreEqual(200, (int)firstUploadResponse.StatusCode);
+
+        var firstDisplayResponse = await m_client.GetAsync("/api/display");
+        Assert.AreEqual(200, (int)firstDisplayResponse.StatusCode);
+        var firstDisplay = await firstDisplayResponse.Content.ReadFromJsonAsync<DisplayResponse>();
+
+        // Re-upload identical content and poll display again
+        var secondUpload = new ByteArrayContent(image);
+        secondUpload.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+        var secondUploadResponse = await m_client.PostAsync($"/api/screens/{s_TestDeviceId}/image", secondUpload);
+        Assert.AreEqual(200, (int)secondUploadResponse.StatusCode);
+
+        var secondDisplayResponse = await m_client.GetAsync("/api/display");
+        Assert.AreEqual(200, (int)secondDisplayResponse.StatusCode);
+        var secondDisplay = await secondDisplayResponse.Content.ReadFromJsonAsync<DisplayResponse>();
+
+        // Assert
+        Assert.IsNotNull(firstDisplay);
+        Assert.IsNotNull(secondDisplay);
+        Assert.AreEqual($"{expectedHash}.jpg", firstDisplay.filename);
+        Assert.AreEqual($"{expectedHash}.jpg", secondDisplay.filename);
+        Assert.AreEqual(firstDisplay.filename, secondDisplay.filename);
+        Assert.IsTrue(secondDisplay.image_url.EndsWith($"/screens/{expectedHash}.jpg"));
     }
 
     [TestMethod]
@@ -324,5 +407,12 @@ public class TrmnlWorkflowTests
             0xF5, 0xF6, 0xF7, 0xF8, 0xF9, 0xFA, 0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01,
             0x00, 0x00, 0x3F, 0x00, 0xFB, 0xD0, 0xFF, 0xD9
         };
+    }
+
+    private byte[] CreateDifferentTestImage()
+    {
+        var image = CreateTestImage();
+        image[image.Length - 3] ^= 0x01;
+        return image;
     }
 }

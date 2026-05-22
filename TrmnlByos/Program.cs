@@ -153,7 +153,6 @@ app.MapGet("/api/display", (HttpRequest request, ILogger<Program> logger) =>
 // POST /api/screens/{id}/image
 app.MapPost("/api/screens/{id}/image", async Task<IResult> (string id, HttpRequest request, ILogger<Program> logger) =>
 {
-    // Normalize to lowercase for consistent storage
     var normalizedId = id.ToLowerInvariant();
 
     if (request.ContentLength is long contentLength && contentLength > maxImageBytes)
@@ -176,39 +175,38 @@ app.MapPost("/api/screens/{id}/image", async Task<IResult> (string id, HttpReque
         _ => ".jpg"
     };
 
-    // Delete any existing images with different extensions
-    var jpgPath = Path.Combine(dataRoot, $"{normalizedId}.jpg");
-    var pngPath = Path.Combine(dataRoot, $"{normalizedId}.png");
+    // Read body into memory to compute SHA256 content hash
+    using var ms = new MemoryStream();
+    await request.Body.CopyToAsync(ms);
+    var imageBytes = ms.ToArray();
 
-    if (ext == ".jpg" && File.Exists(pngPath))
+    if (imageBytes.Length > maxImageBytes)
     {
-        File.Delete(pngPath);
-    }
-    else if (ext == ".png" && File.Exists(jpgPath))
-    {
-        File.Delete(jpgPath);
-    }
-
-    var filePath = Path.Combine(dataRoot, $"{normalizedId}{ext}");
-
-    await using (var fs = File.Create(filePath))
-    {
-        await request.Body.CopyToAsync(fs, request.HttpContext.RequestAborted);
-    }
-
-    if (new FileInfo(filePath).Length > maxImageBytes)
-    {
-        File.Delete(filePath);
         return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
     }
 
-    var screen = screens.TryGetValue(normalizedId, out var existing)
-        ? existing with { LastUpdated = DateTimeOffset.UtcNow, ImagePath = $"/screens/{normalizedId}{ext}" }
-        : new ScreenInfo(normalizedId, $"Screen {normalizedId}", null, DateTimeOffset.UtcNow, $"/screens/{normalizedId}{ext}");
+    var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(imageBytes)).ToLowerInvariant();
+    var newImagePath = $"/screens/{hash}{ext}";
+    var newFilePath = Path.Combine(dataRoot, $"{hash}{ext}");
+
+    // Delete old hash file if image content changed
+    screens.TryGetValue(normalizedId, out var existingScreen);
+    if (existingScreen?.ImagePath != null && existingScreen.ImagePath != newImagePath)
+    {
+        var oldFilePath = Path.Combine(dataRoot, Path.GetFileName(existingScreen.ImagePath));
+        if (File.Exists(oldFilePath))
+            File.Delete(oldFilePath);
+    }
+
+    await File.WriteAllBytesAsync(newFilePath, imageBytes);
+
+    var screen = existingScreen != null
+        ? existingScreen with { LastUpdated = DateTimeOffset.UtcNow, ImagePath = newImagePath }
+        : new ScreenInfo(normalizedId, $"Screen {normalizedId}", null, DateTimeOffset.UtcNow, newImagePath);
 
     screens[normalizedId] = screen;
 
-    logger.LogInformation("Image uploaded: {ScreenId} | Type: {ContentType}", normalizedId, contentType);
+    logger.LogInformation("Image uploaded: {ScreenId} | Type: {ContentType} | Hash: {Hash}", normalizedId, contentType, hash[..8]);
 
     var result = new { id = normalizedId, path = screen.ImagePath! };
     return Results.Ok((object)result);
