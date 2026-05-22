@@ -194,7 +194,10 @@ app.MapPost("/api/screens/{id}/image", async Task<IResult> (string id, HttpReque
     var newImagePath = $"/screens/{hash}{ext}";
     var newFilePath = Path.Combine(dataRoot, $"{hash}{ext}");
 
-    await File.WriteAllBytesAsync(newFilePath, imageBytes);
+    if (!File.Exists(newFilePath))
+    {
+        await File.WriteAllBytesAsync(newFilePath, imageBytes);
+    }
 
     screens.TryGetValue(normalizedId, out var existingScreen);
 
@@ -237,9 +240,16 @@ app.MapPost("/api/screens/{id}/image", async Task<IResult> (string id, HttpReque
     foreach (var staleImagePath in staleImagePaths)
     {
         var staleFilePath = Path.Combine(dataRoot, Path.GetFileName(staleImagePath));
-        if (File.Exists(staleFilePath))
+        try
         {
-            File.Delete(staleFilePath);
+            if (File.Exists(staleFilePath))
+            {
+                File.Delete(staleFilePath);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to delete stale image file {FilePath}", staleFilePath);
         }
     }
 

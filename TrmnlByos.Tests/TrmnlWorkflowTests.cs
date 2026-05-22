@@ -375,7 +375,8 @@ public class TrmnlWorkflowTests
 
             var result = await response.Content.ReadFromJsonAsync<Dictionary<string, JsonElement>>();
             Assert.IsNotNull(result);
-            uploadedPaths.Add(result["path"].GetString()!);
+            Assert.IsTrue(result.TryGetValue("path", out var pathElement));
+            uploadedPaths.Add(pathElement.GetString()!);
         }
 
         // Assert
