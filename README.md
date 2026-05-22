@@ -20,6 +20,8 @@ The BYOD server also supports:
 
 1. POST `/api/screens/{id}/image`
 2. GET `/screens/{id}.jpg`
+3. GET `/` (default landing page with service/device status)
+4. GET `/health` (JSON health check)
 
 All request/response bodies are strongly typed using C# type-safe objects (DTOs).
 
