@@ -30,6 +30,7 @@ All request/response bodies are strongly typed using C# type-safe objects (DTOs)
 - Fully type‑safe minimal API (ASP.NET Core)
 - Implements all firmware endpoints from the TRMNL BYOS spec
 - Supports BYOD image upload and retrieval
+- Automatically retains only the latest 10 uploaded images per device (configurable via `Uploads:MaxImagesPerDevice`)
 - Self‑contained Linux‑x64 Docker image
 - Synology‑friendly `docker-compose.yml`
 - In‑memory screen registry with disk‑backed image storage

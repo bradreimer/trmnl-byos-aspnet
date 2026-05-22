@@ -59,11 +59,16 @@ catch
 
 const int DefaultRefreshRate = 100;
 const int DefaultMaxImageBytes = 10 * 1024 * 1024;
+const int DefaultMaxImagesPerDevice = 10;
 var maxImageBytes = builder.Configuration.GetValue<int?>("Uploads:MaxImageBytes") ?? DefaultMaxImageBytes;
+var maxImagesPerDevice = builder.Configuration.GetValue<int?>("Uploads:MaxImagesPerDevice") ?? DefaultMaxImagesPerDevice;
 var serviceStartTime = DateTimeOffset.UtcNow;
 
 // simple thread-safe in-memory store
 var screens = new ConcurrentDictionary<string, ScreenInfo>(StringComparer.OrdinalIgnoreCase);
+var imageHistoryByDevice = new ConcurrentDictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+var imageUsageCounts = new ConcurrentDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+var imageTrackingLock = new object();
 
 static string? ReadHeader(HttpRequest request, string name)
 {
@@ -411,16 +416,64 @@ app.MapPost("/api/screens/{id}/image", async Task<IResult> (string id, HttpReque
     var newImagePath = $"/screens/{hash}{ext}";
     var newFilePath = Path.Combine(dataRoot, $"{hash}{ext}");
 
-    // Delete old hash file if image content changed
-    screens.TryGetValue(normalizedId, out var existingScreen);
-    if (existingScreen?.ImagePath != null && existingScreen.ImagePath != newImagePath)
+    if (!File.Exists(newFilePath))
     {
-        var oldFilePath = Path.Combine(dataRoot, Path.GetFileName(existingScreen.ImagePath));
-        if (File.Exists(oldFilePath))
-            File.Delete(oldFilePath);
+        await File.WriteAllBytesAsync(newFilePath, imageBytes);
     }
 
-    await File.WriteAllBytesAsync(newFilePath, imageBytes);
+    screens.TryGetValue(normalizedId, out var existingScreen);
+
+    var staleImagePaths = new List<string>();
+    lock (imageTrackingLock)
+    {
+        var history = imageHistoryByDevice.GetOrAdd(normalizedId, static _ => []);
+        // Re-uploads of the same bytes keep the same hash filename, so only track
+        // transitions to a different image path for retention cleanup.
+        if (history.Count == 0 || !string.Equals(history[^1], newImagePath, StringComparison.Ordinal))
+        {
+            history.Add(newImagePath);
+            imageUsageCounts.AddOrUpdate(newImagePath, 1, static (_, count) => count + 1);
+        }
+
+        while (history.Count > maxImagesPerDevice)
+        {
+            var removedImagePath = history[0];
+            history.RemoveAt(0);
+
+            if (!imageUsageCounts.TryGetValue(removedImagePath, out var usageCount))
+            {
+                logger.LogWarning("Image usage count missing for path {ImagePath}", removedImagePath);
+                continue;
+            }
+
+            var remainingUsage = usageCount - 1;
+            if (remainingUsage > 0)
+            {
+                imageUsageCounts[removedImagePath] = remainingUsage;
+            }
+            else
+            {
+                imageUsageCounts.TryRemove(removedImagePath, out _);
+                staleImagePaths.Add(removedImagePath);
+            }
+        }
+    }
+
+    foreach (var staleImagePath in staleImagePaths)
+    {
+        var staleFilePath = Path.Combine(dataRoot, Path.GetFileName(staleImagePath));
+        try
+        {
+            if (File.Exists(staleFilePath))
+            {
+                File.Delete(staleFilePath);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to delete stale image file {FilePath}", staleFilePath);
+        }
+    }
 
     var now = DateTimeOffset.UtcNow;
     var screen = existingScreen != null
