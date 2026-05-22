@@ -202,6 +202,8 @@ app.MapPost("/api/screens/{id}/image", async Task<IResult> (string id, HttpReque
     lock (imageTrackingLock)
     {
         var history = imageHistoryByDevice.GetOrAdd(normalizedId, static _ => []);
+        // Re-uploads of the same bytes keep the same hash filename, so only track
+        // transitions to a different image path for retention cleanup.
         if (history.Count == 0 || !string.Equals(history[^1], newImagePath, StringComparison.Ordinal))
         {
             history.Add(newImagePath);
@@ -213,8 +215,18 @@ app.MapPost("/api/screens/{id}/image", async Task<IResult> (string id, HttpReque
             var removedImagePath = history[0];
             history.RemoveAt(0);
 
-            var remainingUsage = imageUsageCounts.AddOrUpdate(removedImagePath, 0, static (_, count) => count - 1);
-            if (remainingUsage <= 0)
+            if (!imageUsageCounts.TryGetValue(removedImagePath, out var usageCount))
+            {
+                logger.LogWarning("Image usage count missing for path {ImagePath}", removedImagePath);
+                continue;
+            }
+
+            var remainingUsage = usageCount - 1;
+            if (remainingUsage > 0)
+            {
+                imageUsageCounts[removedImagePath] = remainingUsage;
+            }
+            else
             {
                 imageUsageCounts.TryRemove(removedImagePath, out _);
                 staleImagePaths.Add(removedImagePath);
