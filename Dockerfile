@@ -5,6 +5,10 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG TARGETARCH
 WORKDIR /src
 
+# Copy central package/version props required for restore
+COPY Directory.Packages.props ./
+COPY Directory.Build.props ./
+
 # Copy the project file from the subfolder
 COPY TrmnlByos/TrmnlByos.csproj TrmnlByos/
 RUN dotnet restore TrmnlByos/TrmnlByos.csproj
