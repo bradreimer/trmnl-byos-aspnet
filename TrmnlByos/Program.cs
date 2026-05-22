@@ -1,7 +1,8 @@
 using System.Collections.Concurrent;
+using System.Net;
 using System.Net.Mime;
+using System.Text;
 using Microsoft.AspNetCore.Http.Extensions;
-using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.HttpOverrides;
 using TrmnlByos.Models;
 
@@ -61,12 +62,193 @@ const int DefaultMaxImageBytes = 10 * 1024 * 1024;
 const int DefaultMaxImagesPerDevice = 10;
 var maxImageBytes = builder.Configuration.GetValue<int?>("Uploads:MaxImageBytes") ?? DefaultMaxImageBytes;
 var maxImagesPerDevice = builder.Configuration.GetValue<int?>("Uploads:MaxImagesPerDevice") ?? DefaultMaxImagesPerDevice;
+var serviceStartTime = DateTimeOffset.UtcNow;
 
 // simple thread-safe in-memory store
 var screens = new ConcurrentDictionary<string, ScreenInfo>(StringComparer.OrdinalIgnoreCase);
 var imageHistoryByDevice = new ConcurrentDictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 var imageUsageCounts = new ConcurrentDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 var imageTrackingLock = new object();
+
+static string? ReadHeader(HttpRequest request, string name)
+{
+    var value = request.Headers[name].FirstOrDefault();
+    return string.IsNullOrWhiteSpace(value) ? null : value;
+}
+
+static string? PreferValue(string? incomingValue, string? existingValue)
+{
+    return string.IsNullOrWhiteSpace(incomingValue) ? existingValue : incomingValue;
+}
+
+static int? ParsePositiveIntOrNull(string? value)
+{
+    return int.TryParse(value, out var parsed) && parsed > 0 ? parsed : null;
+}
+
+static string BuildLandingPage(IEnumerable<ScreenInfo> activeScreens, DateTimeOffset startedAtUtc, DateTimeOffset nowUtc)
+{
+    var uptime = nowUtc - startedAtUtc;
+    var sb = new StringBuilder();
+
+    sb.Append("""
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>TRMNL BYOS Service</title>
+  <style>
+    :root{color-scheme:light dark;--bg:#0b1020;--panel:#141b34;--panel2:#1b2547;--text:#e8ecff;--sub:#9fb0e3;--accent:#6aa8ff;--line:#2d3a67}
+    *{box-sizing:border-box} body{margin:0;font-family:Inter,Segoe UI,system-ui,-apple-system,sans-serif;background:radial-gradient(circle at top,#1a2450 0,#0b1020 45%,#070b17 100%);color:var(--text)}
+    main{max-width:1100px;margin:0 auto;padding:24px 18px 48px}
+    h1{margin:0 0 8px;font-size:1.8rem} h2{margin:0 0 12px;font-size:1.15rem} h3{margin:0 0 8px;font-size:1rem}
+    .subtitle{color:var(--sub);margin:0 0 20px}
+    .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+    .card{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:12px;padding:14px}
+    .meta{display:grid;grid-template-columns:max-content 1fr;gap:6px 12px;font-size:.92rem}
+    .k{color:var(--sub)} .v{word-break:break-word}
+    .links a{color:var(--accent);text-decoration:none} .links a:hover{text-decoration:underline}
+    .device-list{display:grid;gap:12px}
+    .empty{color:var(--sub);padding:8px 2px}
+    .screen{margin-top:10px}
+    .screen img{max-width:100%;height:auto;display:block;border-radius:8px;border:1px solid var(--line);background:#000}
+    code{background:#0f1630;padding:2px 6px;border-radius:6px}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>TRMNL BYOS Server</h1>
+    <p class="subtitle">Self-hosted firmware-compatible endpoint for TRMNL devices.</p>
+    <section class="grid">
+      <article class="card">
+        <h2>About TRMNL BYOS</h2>
+        <div class="links meta">
+          <div class="k">Website</div><div class="v"><a href="https://usetrmnl.com/" target="_blank" rel="noopener noreferrer">usetrmnl.com</a></div>
+          <div class="k">Docs</div><div class="v"><a href="https://docs.usetrmnl.com/" target="_blank" rel="noopener noreferrer">docs.usetrmnl.com</a></div>
+          <div class="k">BYOS API spec</div><div class="v"><a href="https://github.com/usetrmnl/byos_hanami/blob/main/doc/api.adoc" target="_blank" rel="noopener noreferrer">GitHub API reference</a></div>
+          <div class="k">This project</div><div class="v"><a href="https://github.com/bradreimer/trmnl-byos-aspnet" target="_blank" rel="noopener noreferrer">bradreimer/trmnl-byos-aspnet</a></div>
+        </div>
+      </article>
+      <article class="card">
+        <h2>Service details</h2>
+        <div class="meta">
+          <div class="k">Service</div><div class="v">trmnl-byod-dotnet</div>
+          <div class="k">Started (UTC)</div><div class="v">
+""");
+    sb.Append(WebUtility.HtmlEncode(startedAtUtc.ToString("u")));
+    sb.Append("""
+</div>
+          <div class="k">Uptime</div><div class="v">
+""");
+    sb.Append(WebUtility.HtmlEncode($"{(int)uptime.TotalDays}d {uptime.Hours}h {uptime.Minutes}m {uptime.Seconds}s"));
+    sb.Append("""
+</div>
+          <div class="k">Active devices</div><div class="v">
+""");
+    sb.Append(activeScreens.Count());
+    sb.Append("""
+</div>
+        </div>
+      </article>
+    </section>
+    <section class="card" style="margin-top:14px">
+      <h2>Active TRMNL devices</h2>
+      <div class="device-list">
+""");
+
+    foreach (var screen in activeScreens.OrderByDescending(s => s.LastSeen))
+    {
+        sb.Append("""
+        <article class="card">
+          <h3>
+""");
+        sb.Append(WebUtility.HtmlEncode(screen.Name));
+        sb.Append("""
+</h3>
+          <div class="meta">
+            <div class="k">Device ID</div><div class="v"><code>
+""");
+        sb.Append(WebUtility.HtmlEncode(screen.DeviceId));
+        sb.Append("""
+</code></div>
+            <div class="k">Screen ID</div><div class="v"><code>
+""");
+        sb.Append(WebUtility.HtmlEncode(screen.Id));
+        sb.Append("""
+</code></div>
+            <div class="k">Model</div><div class="v">
+""");
+        sb.Append(WebUtility.HtmlEncode(screen.Model ?? "unknown"));
+        sb.Append("""
+</div>
+            <div class="k">Firmware</div><div class="v">
+""");
+        sb.Append(WebUtility.HtmlEncode(screen.Firmware ?? "unknown"));
+        sb.Append("""
+</div>
+            <div class="k">Refresh rate</div><div class="v">
+""");
+        sb.Append(WebUtility.HtmlEncode(screen.RefreshRate is > 0 ? $"{screen.RefreshRate} ms" : "unknown"));
+        sb.Append("""
+</div>
+            <div class="k">Last seen (UTC)</div><div class="v">
+""");
+        sb.Append(WebUtility.HtmlEncode(screen.LastSeen.ToString("u")));
+        sb.Append("""
+</div>
+            <div class="k">Last updated (UTC)</div><div class="v">
+""");
+        sb.Append(WebUtility.HtmlEncode(screen.LastUpdated == DateTimeOffset.MinValue ? "never" : screen.LastUpdated.ToString("u")));
+        sb.Append("""
+</div>
+            <div class="k">Latest screen path</div><div class="v">
+""");
+        sb.Append(WebUtility.HtmlEncode(screen.ImagePath ?? "not uploaded yet"));
+        sb.Append("""
+</div>
+          </div>
+""");
+
+        if (!string.IsNullOrWhiteSpace(screen.ImagePath))
+        {
+            sb.Append("""
+          <div class="screen">
+            <img loading="lazy" alt="Latest screen for 
+""");
+            sb.Append(WebUtility.HtmlEncode(screen.DeviceId));
+            sb.Append("""
+" src="
+""");
+            sb.Append(WebUtility.HtmlEncode(screen.ImagePath));
+            sb.Append("""
+" />
+          </div>
+""");
+        }
+
+        sb.Append("""
+        </article>
+""");
+    }
+
+    if (!activeScreens.Any())
+    {
+        sb.Append("""
+        <p class="empty">No active devices have checked in yet.</p>
+""");
+    }
+
+    sb.Append("""
+      </div>
+    </section>
+  </main>
+</body>
+</html>
+""");
+
+    return sb.ToString();
+}
 
 // ---- Firmware: Setup ----
 // GET /api/setup
@@ -75,21 +257,42 @@ app.MapGet("/api/setup", (HttpRequest request, ILogger<Program> logger) =>
 {
     var deviceId = request.Headers["ID"].FirstOrDefault() ?? "unknown";
     var screenId = deviceId.ToLowerInvariant();
+    var model = ReadHeader(request, "MODEL");
+    var firmware = ReadHeader(request, "FIRMWARE");
+    var refreshRate = ParsePositiveIntOrNull(ReadHeader(request, "REFRESH_RATE")) ?? DefaultRefreshRate;
+    var now = DateTimeOffset.UtcNow;
 
-    screens.GetOrAdd(screenId, static key => new ScreenInfo(
-        key,
-        $"Screen {key}",
-        null,
-        DateTimeOffset.UtcNow,
-        null
-    ));
+    var screen = screens.AddOrUpdate(
+        screenId,
+        static (key, state) => new ScreenInfo(
+            Id: key,
+            Name: $"Screen {key}",
+            Description: null,
+            LastUpdated: state.Now,
+            ImagePath: null,
+            DeviceId: state.DeviceId,
+            Model: state.Model,
+            Firmware: state.Firmware,
+            RefreshRate: state.RefreshRate,
+            LastSeen: state.Now
+        ),
+        static (_, existing, state) => existing with
+        {
+            LastSeen = state.Now,
+            DeviceId = state.DeviceId,
+            Model = PreferValue(state.Model, existing.Model),
+            Firmware = PreferValue(state.Firmware, existing.Firmware),
+            RefreshRate = state.RefreshRate
+        },
+        (Now: now, DeviceId: deviceId, Model: model, Firmware: firmware, RefreshRate: refreshRate)
+    );
 
     logger.LogInformation("Device setup: {DeviceId}", deviceId);
 
     var response = new SetupResponse(
         api_key: deviceId,
-        friendly_id: screenId.ToUpper(),
-        image_url: $"/screens/{screenId}.jpg",
+        friendly_id: screenId.ToUpperInvariant(),
+        image_url: screen.ImagePath ?? $"/screens/{screenId}.jpg",
         message: "Welcome to TRMNL BYOS"
     );
 
@@ -119,16 +322,35 @@ app.MapGet("/api/display", (HttpRequest request, ILogger<Program> logger) =>
 {
     var deviceId = request.Headers["ID"].FirstOrDefault() ?? "unknown";
     var screenId = deviceId.ToLowerInvariant();
-    var refreshHeader = request.Headers["REFRESH_RATE"].FirstOrDefault();
-    var refreshRate = int.TryParse(refreshHeader, out var r) && r > 0 ? r : DefaultRefreshRate;
+    var refreshRate = ParsePositiveIntOrNull(ReadHeader(request, "REFRESH_RATE")) ?? DefaultRefreshRate;
+    var model = ReadHeader(request, "MODEL");
+    var firmware = ReadHeader(request, "FIRMWARE");
+    var now = DateTimeOffset.UtcNow;
 
-    var screen = screens.GetOrAdd(screenId, static key => new ScreenInfo(
-        key,
-        $"Screen {key}",
-        null,
-        DateTimeOffset.MinValue,
-        null
-    ));
+    var screen = screens.AddOrUpdate(
+        screenId,
+        static (key, state) => new ScreenInfo(
+            Id: key,
+            Name: $"Screen {key}",
+            Description: null,
+            LastUpdated: DateTimeOffset.MinValue,
+            ImagePath: null,
+            DeviceId: state.DeviceId,
+            Model: state.Model,
+            Firmware: state.Firmware,
+            RefreshRate: state.RefreshRate,
+            LastSeen: state.Now
+        ),
+        static (_, existing, state) => existing with
+        {
+            LastSeen = state.Now,
+            DeviceId = state.DeviceId,
+            Model = PreferValue(state.Model, existing.Model),
+            Firmware = PreferValue(state.Firmware, existing.Firmware),
+            RefreshRate = state.RefreshRate
+        },
+        (Now: now, DeviceId: deviceId, Model: model, Firmware: firmware, RefreshRate: refreshRate)
+    );
 
     var imagePath = screen.ImagePath ?? $"/screens/{screenId}.jpg";
     var filename = Path.GetFileName(imagePath);
@@ -253,9 +475,21 @@ app.MapPost("/api/screens/{id}/image", async Task<IResult> (string id, HttpReque
         }
     }
 
+    var now = DateTimeOffset.UtcNow;
     var screen = existingScreen != null
-        ? existingScreen with { LastUpdated = DateTimeOffset.UtcNow, ImagePath = newImagePath }
-        : new ScreenInfo(normalizedId, $"Screen {normalizedId}", null, DateTimeOffset.UtcNow, newImagePath);
+        ? existingScreen with { LastUpdated = now, ImagePath = newImagePath, LastSeen = now }
+        : new ScreenInfo(
+            Id: normalizedId,
+            Name: $"Screen {normalizedId}",
+            Description: null,
+            LastUpdated: now,
+            ImagePath: newImagePath,
+            DeviceId: id,
+            Model: null,
+            Firmware: null,
+            RefreshRate: null,
+            LastSeen: now
+        );
 
     screens[normalizedId] = screen;
 
@@ -302,7 +536,13 @@ app.MapGet("/screens/{id}.png", (string id, ILogger<Program> logger) =>
 });
 
 // Health
-app.MapGet("/", () => Results.Ok(new { status = "ok", service = "trmnl-byod-dotnet" }));
+app.MapGet("/", () =>
+{
+    var now = DateTimeOffset.UtcNow;
+    var page = BuildLandingPage(screens.Values, serviceStartTime, now);
+    return Results.Content(page, "text/html; charset=utf-8");
+});
+app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "trmnl-byod-dotnet" }));
 
 app.Run();
 

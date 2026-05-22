@@ -431,7 +431,7 @@ public class TrmnlWorkflowTests
     public async Task Workflow_HealthCheck_Returns200()
     {
         // Act
-        var response = await m_client.GetAsync("/");
+        var response = await m_client.GetAsync("/health");
 
         // Assert
         Assert.AreEqual(200, (int)response.StatusCode);
@@ -439,6 +439,30 @@ public class TrmnlWorkflowTests
         Assert.IsNotNull(result);
         Assert.AreEqual("ok", result["status"].ToString());
         Assert.IsTrue(result["service"].ToString()!.Contains("trmnl"));
+    }
+
+    [TestMethod]
+    public async Task Workflow_LandingPage_ReturnsHtmlWithServiceAndDeviceSections()
+    {
+        // Arrange
+        m_client.DefaultRequestHeaders.Add("ID", s_TestDeviceId);
+        m_client.DefaultRequestHeaders.Add("MODEL", "TRMNL-EINK");
+        m_client.DefaultRequestHeaders.Add("FIRMWARE", "1.5.2");
+        m_client.DefaultRequestHeaders.Add("REFRESH_RATE", "150");
+        await m_client.GetAsync("/api/setup");
+
+        // Act
+        var response = await m_client.GetAsync("/");
+        var html = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        Assert.AreEqual(200, (int)response.StatusCode);
+        Assert.AreEqual("text/html", response.Content.Headers.ContentType?.MediaType);
+        Assert.IsTrue(html.Contains("TRMNL BYOS Server"));
+        Assert.IsTrue(html.Contains("Active TRMNL devices"));
+        Assert.IsTrue(html.Contains(s_TestDeviceId));
+        Assert.IsTrue(html.Contains("TRMNL-EINK"));
+        Assert.IsTrue(html.Contains("1.5.2"));
     }
 
     /// <summary>
