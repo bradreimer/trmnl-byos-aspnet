@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using TrmnlByos.Models;
 
@@ -357,6 +358,75 @@ public class TrmnlWorkflowTests
     }
 
     [TestMethod]
+    public async Task Workflow_UploadMoreThanTenImages_DeletesOldestFilesForDevice()
+    {
+        // Arrange
+        var uploadedPaths = new List<string>();
+
+        // Act
+        for (var i = 0; i < 12; i++)
+        {
+            var imageContent = CreateVariantTestImage(i);
+            var content = new ByteArrayContent(imageContent);
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+
+            var response = await m_client.PostAsync($"/api/screens/{s_TestDeviceId}/image", content);
+            Assert.AreEqual(200, (int)response.StatusCode);
+
+            var result = await response.Content.ReadFromJsonAsync<Dictionary<string, JsonElement>>();
+            Assert.IsNotNull(result);
+            uploadedPaths.Add(result["path"].GetString()!);
+        }
+
+        // Assert
+        var testDataDir = Environment.GetEnvironmentVariable("TEST_DATA_DIR");
+        Assert.IsFalse(string.IsNullOrWhiteSpace(testDataDir));
+
+        foreach (var stalePath in uploadedPaths.Take(2))
+        {
+            var staleFilePath = Path.Combine(testDataDir!, Path.GetFileName(stalePath));
+            Assert.IsFalse(File.Exists(staleFilePath), $"Expected stale image to be deleted: {staleFilePath}");
+        }
+
+        foreach (var retainedPath in uploadedPaths.Skip(2))
+        {
+            var retainedFilePath = Path.Combine(testDataDir!, Path.GetFileName(retainedPath));
+            Assert.IsTrue(File.Exists(retainedFilePath), $"Expected retained image to exist: {retainedFilePath}");
+        }
+    }
+
+    [TestMethod]
+    public async Task Workflow_CleanupRetainsSharedImageWhenUsedByAnotherDevice()
+    {
+        // Arrange
+        const string secondDeviceId = "11:22:33:44:55:66";
+        var sharedImage = CreateTestImage();
+        var sharedHash = Convert.ToHexString(SHA256.HashData(sharedImage)).ToLowerInvariant();
+
+        // Device B uploads image first.
+        var secondDeviceUpload = new ByteArrayContent(sharedImage);
+        secondDeviceUpload.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+        var secondDeviceResponse = await m_client.PostAsync($"/api/screens/{secondDeviceId}/image", secondDeviceUpload);
+        Assert.AreEqual(200, (int)secondDeviceResponse.StatusCode);
+
+        // Device A uploads 11 images; first is shared image so it becomes stale for A.
+        for (var i = 0; i < 11; i++)
+        {
+            var imageContent = i == 0 ? sharedImage : CreateVariantTestImage(i + 20);
+            var content = new ByteArrayContent(imageContent);
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+            var uploadResponse = await m_client.PostAsync($"/api/screens/{s_TestDeviceId}/image", content);
+            Assert.AreEqual(200, (int)uploadResponse.StatusCode);
+        }
+
+        // Act
+        var sharedImageResponse = await m_client.GetAsync($"/screens/{sharedHash}.jpg");
+
+        // Assert
+        Assert.AreEqual(200, (int)sharedImageResponse.StatusCode);
+    }
+
+    [TestMethod]
     public async Task Workflow_HealthCheck_Returns200()
     {
         // Act
@@ -413,6 +483,13 @@ public class TrmnlWorkflowTests
     {
         var image = CreateTestImage();
         image[image.Length - 3] ^= 0x01;
+        return image;
+    }
+
+    private byte[] CreateVariantTestImage(int index)
+    {
+        var image = CreateTestImage();
+        image[image.Length - 3] ^= (byte)(index + 1);
         return image;
     }
 }
