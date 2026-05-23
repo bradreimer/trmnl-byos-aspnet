@@ -451,6 +451,13 @@ public class TrmnlWorkflowTests
         m_client.DefaultRequestHeaders.Add("REFRESH_RATE", "150");
         await m_client.GetAsync("/api/setup");
 
+        var imageContent = CreateTestImage();
+        var uploadContent = new ByteArrayContent(imageContent);
+        uploadContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+        await m_client.PostAsync($"/api/screens/{s_TestDeviceId}/image", uploadContent);
+
+        await m_client.GetAsync("/api/display");
+
         // Act
         var response = await m_client.GetAsync("/");
         var html = await response.Content.ReadAsStringAsync();
@@ -463,6 +470,9 @@ public class TrmnlWorkflowTests
         Assert.IsTrue(html.Contains(s_TestDeviceId));
         Assert.IsTrue(html.Contains("TRMNL-EINK"));
         Assert.IsTrue(html.Contains("1.5.2"));
+        Assert.IsTrue(html.Contains("Last screen fetched (UTC)"));
+        Assert.IsTrue(html.Contains("Last screen updated (UTC)"));
+        Assert.IsTrue(html.Contains("ago") || html.Contains("just now"));
     }
 
     /// <summary>

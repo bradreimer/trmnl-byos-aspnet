@@ -86,6 +86,49 @@ static int? ParsePositiveIntOrNull(string? value)
     return int.TryParse(value, out var parsed) && parsed > 0 ? parsed : null;
 }
 
+static string FormatRelativeTime(DateTimeOffset value, DateTimeOffset nowUtc)
+{
+    if (value == DateTimeOffset.MinValue)
+    {
+        return "never";
+    }
+
+    var elapsed = nowUtc - value;
+    if (elapsed < TimeSpan.Zero)
+    {
+        elapsed = TimeSpan.Zero;
+    }
+
+    if (elapsed < TimeSpan.FromMinutes(1))
+    {
+        return "just now";
+    }
+
+    if (elapsed < TimeSpan.FromHours(1))
+    {
+        return $"{(int)elapsed.TotalMinutes}m ago";
+    }
+
+    if (elapsed < TimeSpan.FromDays(1))
+    {
+        return $"{(int)elapsed.TotalHours}h ago";
+    }
+
+    return $"{(int)elapsed.TotalDays}d ago";
+}
+
+static string FormatTimestampWithRelative(DateTimeOffset value, DateTimeOffset nowUtc)
+{
+    if (value == DateTimeOffset.MinValue)
+    {
+        return "never";
+    }
+
+    var utcText = value.ToString("u");
+    var relativeText = FormatRelativeTime(value, nowUtc);
+    return $"{utcText} ({relativeText})";
+}
+
 static string BuildLandingPage(IEnumerable<ScreenInfo> activeScreens, DateTimeOffset startedAtUtc, DateTimeOffset nowUtc)
 {
     var uptime = nowUtc - startedAtUtc;
@@ -195,11 +238,10 @@ static string BuildLandingPage(IEnumerable<ScreenInfo> activeScreens, DateTimeOf
             <div class="k">Last seen (UTC)</div><div class="v">
 """);
         sb.Append(WebUtility.HtmlEncode(screen.LastSeen.ToString("u")));
-        sb.Append("""
-</div>
-            <div class="k">Last updated (UTC)</div><div class="v">
-""");
-        sb.Append(WebUtility.HtmlEncode(screen.LastUpdated == DateTimeOffset.MinValue ? "never" : screen.LastUpdated.ToString("u")));
+        sb.Append("</div>\n            <div class=\"k\">Last screen fetched (UTC)</div><div class=\"v\">\n");
+        sb.Append(WebUtility.HtmlEncode(FormatTimestampWithRelative(screen.LastScreenFetched, nowUtc)));
+        sb.Append("\n</div>\n            <div class=\"k\">Last screen updated (UTC)</div><div class=\"v\">\n");
+        sb.Append(WebUtility.HtmlEncode(FormatTimestampWithRelative(screen.LastUpdated, nowUtc)));
         sb.Append("""
 </div>
             <div class="k">Latest screen path</div><div class="v">
@@ -268,7 +310,8 @@ app.MapGet("/api/setup", (HttpRequest request, ILogger<Program> logger) =>
             Id: key,
             Name: $"Screen {key}",
             Description: null,
-            LastUpdated: state.Now,
+            LastUpdated: DateTimeOffset.MinValue,
+            LastScreenFetched: DateTimeOffset.MinValue,
             ImagePath: null,
             DeviceId: state.DeviceId,
             Model: state.Model,
@@ -334,6 +377,7 @@ app.MapGet("/api/display", (HttpRequest request, ILogger<Program> logger) =>
             Name: $"Screen {key}",
             Description: null,
             LastUpdated: DateTimeOffset.MinValue,
+            LastScreenFetched: state.Now,
             ImagePath: null,
             DeviceId: state.DeviceId,
             Model: state.Model,
@@ -343,6 +387,7 @@ app.MapGet("/api/display", (HttpRequest request, ILogger<Program> logger) =>
         ),
         static (_, existing, state) => existing with
         {
+            LastScreenFetched = state.Now,
             LastSeen = state.Now,
             DeviceId = state.DeviceId,
             Model = PreferValue(state.Model, existing.Model),
@@ -483,6 +528,7 @@ app.MapPost("/api/screens/{id}/image", async Task<IResult> (string id, HttpReque
             Name: $"Screen {normalizedId}",
             Description: null,
             LastUpdated: now,
+            LastScreenFetched: DateTimeOffset.MinValue,
             ImagePath: newImagePath,
             DeviceId: id,
             Model: null,

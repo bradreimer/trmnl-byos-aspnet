@@ -5,6 +5,7 @@ public sealed record ScreenInfo(
     string Name,
     string? Description,
     DateTimeOffset LastUpdated,
+    DateTimeOffset LastScreenFetched,
     string? ImagePath,
     string DeviceId,
     string? Model,
